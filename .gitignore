@@ -1,0 +1,11 @@
+*.a
+
+bin/
+
+obj/
+
+dist/
+
+tests/
+
+EMPTY
