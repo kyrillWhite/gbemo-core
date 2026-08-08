@@ -5,19 +5,19 @@
 class RegisterFile
 {
 private:
-    u8  A;  // Hi AF, accum
-    u8  F;  // Flag register
-    u8  B;  // Hi BC
-    u8  C;  // Lo BC
-    u8  D;  // Hi DE
-    u8  E;  // Lo DE
-    u8  H;  // Hi HL
-    u8  L;  // Lo HL
+    u8 A; // Hi AF, accum
+    u8 F; // Flag register
+    u8 B; // Hi BC
+    u8 C; // Lo BC
+    u8 D; // Hi DE
+    u8 E; // Lo DE
+    u8 H; // Hi HL
+    u8 L; // Lo HL
 
     u16 SP; // Stack Pointer
     u16 PC; // Program Counter/Pointer
 
-    u8  IR; // Instruction Register 
+    u8 IR; // Instruction Register
 
 public:
     RegisterFile(bool dmgBootInit = false);
@@ -83,4 +83,3 @@ public:
 
     bool checkConditional(u8 type);
 };
-

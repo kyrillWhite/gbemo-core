@@ -1,11 +1,9 @@
 #include "bus.h"
 
-Bus::Bus() :
-    addrBus(new AddressBus()),
-    dataBus(new DataBus())
+Bus::Bus() : addrBus(new AddressBus()),
+             dataBus(new DataBus())
 {
 }
-
 
 u8 Bus::readMemory()
 {
@@ -17,12 +15,12 @@ void Bus::writeMemory(u8 data)
     dataBus->writeMemory(data);
 }
 
-void Bus::setMemory(Memory* memory)
+void Bus::setMemory(Memory *memory)
 {
     dataBus->setMemory(memory);
 }
 
-AddressBus* Bus::getAddressBus()
+AddressBus *Bus::getAddressBus()
 {
     return addrBus;
 }

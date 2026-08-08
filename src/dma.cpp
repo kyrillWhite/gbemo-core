@@ -2,16 +2,16 @@
 #include "memory.h"
 #include "ppu.h"
 
-DMA::DMA(): active(false), byte(0), value(0), startDelay(0), memory(nullptr), ppu(nullptr)
+DMA::DMA() : active(false), byte(0), value(0), startDelay(0), memory(nullptr), ppu(nullptr)
 {
 }
 
-void DMA::setMemory(Memory* _memory)
+void DMA::setMemory(Memory *_memory)
 {
     memory = _memory;
 }
 
-void DMA::setPPU(PPU* _ppu)
+void DMA::setPPU(PPU *_ppu)
 {
     ppu = _ppu;
 }
@@ -26,11 +26,13 @@ void DMA::start(u8 start)
 
 void DMA::tick()
 {
-    if (!active) {
+    if (!active)
+    {
         return;
     }
 
-    if (startDelay) {
+    if (startDelay)
+    {
         startDelay--;
         return;
     }

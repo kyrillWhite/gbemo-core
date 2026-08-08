@@ -9,11 +9,11 @@
 class ControlUnit
 {
 private:
-    Bus* bus;
-    RegisterFile* registerFile;
-    IDU* idu;
-    ALU* alu;
-    Interrupts* interrupts;
+    Bus *bus;
+    RegisterFile *registerFile;
+    IDU *idu;
+    ALU *alu;
+    Interrupts *interrupts;
 
     u8 instructionCycle;
     bool isCbInstruction;
@@ -28,7 +28,6 @@ private:
     bool IME;
 
     u16 currentPC;
-
 
     void incrementPC();
     void M1();
@@ -48,13 +47,11 @@ private:
 
 public:
     ControlUnit(
-        Bus* _bus,
-        RegisterFile* _registerFile,
-        IDU* _idu,
-        ALU* _alu,
-        Interrupts* _interrupts
-    );
+        Bus *_bus,
+        RegisterFile *_registerFile,
+        IDU *_idu,
+        ALU *_alu,
+        Interrupts *_interrupts);
 
     void executeInstruction();
 };
-

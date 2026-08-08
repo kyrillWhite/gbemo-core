@@ -2,7 +2,8 @@
 
 RegisterFile::RegisterFile(bool skipBoot)
 {
-    if (skipBoot) {
+    if (skipBoot)
+    {
         A = 0x01;
         F = 0xB0;
         B = 0x00;
@@ -15,7 +16,8 @@ RegisterFile::RegisterFile(bool skipBoot)
         SP = 0xFFFE;
         IR = 0x00;
     }
-    else {
+    else
+    {
         A = 0x00;
         F = 0x00;
         B = 0x00;
@@ -363,7 +365,7 @@ u8 RegisterFile::getR16Mstk(u8 code)
 
 void RegisterFile::setZflag(bool value)
 {
-    F = value ? ( F | 0b10000000) : (F & ~0b10000000);
+    F = value ? (F | 0b10000000) : (F & ~0b10000000);
 }
 
 bool RegisterFile::getZflag()

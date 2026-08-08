@@ -31,8 +31,8 @@ private:
     u8 envelopeTimer;
     void resetEnvelopeTimer();
     bool envelopeIncrease;
-    u8 volume; //0-15
-    
+    u8 volume; // 0-15
+
     void setFrequency(u16 freq);
     u16 getFrequency();
 
@@ -52,4 +52,3 @@ public:
     double getSample() override;
     u16 frequencyCalculation(u16 current);
 };
-

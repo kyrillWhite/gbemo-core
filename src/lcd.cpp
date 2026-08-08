@@ -1,22 +1,24 @@
 #include "lcd.h"
 
-LCD::LCD(DMA* _dma, bool skipBoot) : dma(_dma)
+LCD::LCD(DMA *_dma, bool skipBoot) : dma(_dma)
 {
     registers = new LcdRegisters();
-    if (skipBoot) {
+    if (skipBoot)
+    {
         registers->lcdc = 0x91;
         registers->scrollX = 0;
         registers->scrollY = 0;
         registers->ly = 0;
         registers->lyCompare = 0;
-        //registers->dma = 0xFF;
+        // registers->dma = 0xFF;
         registers->bgPalette = 0xFC;
         registers->objPalette[0] = 0xFF;
         registers->objPalette[1] = 0xFF;
         registers->windowX = 0;
         registers->windowY = 0;
 
-        for (int i = 0; i < 4; i++) {
+        for (int i = 0; i < 4; i++)
+        {
             registers->bgColors[i] = i;
             registers->sp1Colors[i] = i;
             registers->sp2Colors[i] = i;
@@ -32,34 +34,41 @@ LCD::~LCD()
 u16 LCD::read(u16 address)
 {
     u8 offset = (address - 0xFF40);
-    u8* p = (u8*)registers;
+    u8 *p = (u8 *)registers;
     return p[offset];
 }
 
 void LCD::write(u16 address, u8 value)
 {
     u8 offset = (address - 0xFF40);
-    u8* p = (u8*)registers;
+    u8 *p = (u8 *)registers;
     p[offset] = value;
 
-    if (offset == 6) {
+    if (offset == 6)
+    {
         dma->start(value);
     }
 
-    if (address == 0xFF47) {
+    if (address == 0xFF47)
+    {
         updatePalette(value, 0);
-    } else if (address == 0xFF48) {
+    }
+    else if (address == 0xFF48)
+    {
         updatePalette(value & 0b11111100, 1);
-    } else if (address == 0xFF49) {
+    }
+    else if (address == 0xFF49)
+    {
         updatePalette(value & 0b11111100, 2);
     }
 }
 
 void LCD::updatePalette(u8 paletteData, u8 pal)
 {
-    u8* pColors = registers->bgColors;
+    u8 *pColors = registers->bgColors;
 
-    switch (pal) {
+    switch (pal)
+    {
     case 1:
         pColors = registers->sp1Colors;
         break;
@@ -74,7 +83,7 @@ void LCD::updatePalette(u8 paletteData, u8 pal)
     pColors[3] = (paletteData >> 6) & 0b11;
 }
 
-LcdRegisters* LCD::getRegisters()
+LcdRegisters *LCD::getRegisters()
 {
     return registers;
 }

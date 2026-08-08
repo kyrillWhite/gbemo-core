@@ -6,8 +6,8 @@
 class Bus
 {
 private:
-    AddressBus* addrBus;
-    DataBus* dataBus;
+    AddressBus *addrBus;
+    DataBus *dataBus;
 
 public:
     Bus();
@@ -17,7 +17,6 @@ public:
     u8 readMemory();
     void writeMemory(u8 data);
 
-    void setMemory(Memory* memory);
-    AddressBus* getAddressBus();
+    void setMemory(Memory *memory);
+    AddressBus *getAddressBus();
 };
-

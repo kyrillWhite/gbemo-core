@@ -7,23 +7,22 @@
 class MemoryIO
 {
 private:
-    Interrupts* interrupts;
-    Timer* timer;
-    LCD* lcd;
-    APU* apu;
+    Interrupts *interrupts;
+    Timer *timer;
+    LCD *lcd;
+    APU *apu;
 
     bool booted;
-    u8* serial;
-    Joypad* joypad;
+    u8 *serial;
+    Joypad *joypad;
 
 public:
     MemoryIO(
-        Interrupts* _interrupts,
-        Timer* _timer,
-        LCD* _lcd,
-        Joypad* _joypad,
-        APU* _apu
-    );
+        Interrupts *_interrupts,
+        Timer *_timer,
+        LCD *_lcd,
+        Joypad *_joypad,
+        APU *_apu);
     ~MemoryIO();
 
     bool isBooted();

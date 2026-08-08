@@ -1,7 +1,6 @@
 #pragma once
 #include "common.h"
 
-
 class AudioChannel
 {
 protected:
@@ -18,4 +17,3 @@ public:
     // return value in range between -1.0 and 1.0
     virtual double getSample() = 0;
 };
-

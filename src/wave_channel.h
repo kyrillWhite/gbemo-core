@@ -13,7 +13,7 @@ private:
     void resetLengthTimer();
     u8 wavePos;
 
-    //NR32
+    // NR32
 
     u8 volume;
     u8 getVolume();
@@ -36,4 +36,3 @@ public:
     bool isEnabled() override;
     double getSample() override;
 };
-

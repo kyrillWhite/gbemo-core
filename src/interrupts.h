@@ -26,4 +26,3 @@ public:
     bool getIEflag(InterruptType type);
     void setIEflag(InterruptType type, bool value);
 };
-

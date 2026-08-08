@@ -14,9 +14,9 @@
     [+-] miscellaneous instructions
 */
 
-
-enum Opcode {
-    // 8-bit load instructions             
+enum Opcode
+{
+    // 8-bit load instructions
     LoadRegister_Register,
     LoadRegister_Immediate,
     LoadRegister_IndirectHL,
@@ -138,9 +138,13 @@ enum Opcode {
 };
 
 #ifdef DEBUG
-static std::string getOpcodeName(const Opcode value) {
-    #define PROCESS_VAL(p) case(p): return #p;
-    switch (value) {
+static std::string getOpcodeName(const Opcode value)
+{
+#define PROCESS_VAL(p) \
+    case (p):          \
+        return #p;
+    switch (value)
+    {
         PROCESS_VAL(LoadRegister_Register);
         PROCESS_VAL(LoadRegister_Immediate);
         PROCESS_VAL(LoadRegister_IndirectHL);
@@ -245,9 +249,9 @@ static std::string getOpcodeName(const Opcode value) {
         PROCESS_VAL(DisableInterrupts);
         PROCESS_VAL(EnableInterrupts);
         PROCESS_VAL(Nop);
-        default:
-            return "Unknown";
+    default:
+        return "Unknown";
     }
-    #undef PROCESS_VAL
+#undef PROCESS_VAL
 }
 #endif // DEBUG

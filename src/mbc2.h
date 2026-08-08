@@ -3,16 +3,17 @@
 #include "cartridge_memory.h"
 #include "battery_ram.h"
 
-class MBC2 : public CartridgeMemory {
+class MBC2 : public CartridgeMemory
+{
 private:
-    u8* ramData;
+    u8 *ramData;
     static constexpr std::size_t RAM_SIZE = 512;
     bool ramEnable;
     u8 romBank;
-    BatteryRam* battery;
+    BatteryRam *battery;
 
 public:
-    MBC2(u32 _romSize, u8* _romData, BatteryRam* _battery = nullptr);
+    MBC2(u32 _romSize, u8 *_romData, BatteryRam *_battery = nullptr);
     ~MBC2();
 
     u8 read(u16 address) override;

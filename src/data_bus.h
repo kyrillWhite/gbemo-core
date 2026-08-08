@@ -6,7 +6,7 @@
 class DataBus
 {
 private:
-    Memory* memory;
+    Memory *memory;
 
 public:
     DataBus();
@@ -14,5 +14,5 @@ public:
     u8 readMemory();
     void writeMemory(u8 _data);
 
-    void setMemory(Memory* _memory);
+    void setMemory(Memory *_memory);
 };

@@ -1,8 +1,9 @@
 #pragma once
 #include "fetch_state.h"
 
-struct FifoEntry {
-    FifoEntry* next;
+struct FifoEntry
+{
+    FifoEntry *next;
     u8 pixel;
 };
 
@@ -11,8 +12,8 @@ class FIFO
 public:
     FetchState fetchState;
 
-    FifoEntry* head;
-    FifoEntry* tail;
+    FifoEntry *head;
+    FifoEntry *tail;
     u32 size;
 
     u8 lineX;
@@ -32,4 +33,3 @@ public:
 
     void reset();
 };
-

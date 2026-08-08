@@ -13,27 +13,27 @@ const int XRES = 160;
 class PPU
 {
 private:
-    LCD* lcd;
-    PpuStateMachine* ppuSm;
-    FIFO* fifo;
+    LCD *lcd;
+    PpuStateMachine *ppuSm;
+    FIFO *fifo;
 
-    OAMEntry* oam; // 160 temp - move to ppu
-    u8* vram;      // 8192 (8Kb)
+    OAMEntry *oam; // 160 temp - move to ppu
+    u8 *vram;      // 8192 (8Kb)
 
     u32 currentFrame;
     u32 lineTicks;
-    u8* videoBuffer;
+    u8 *videoBuffer;
 
 public:
-    PPU(LCD* _lcd, bool skipBoot);
+    PPU(LCD *_lcd, bool skipBoot);
     ~PPU();
 
     u8 lineSpriteCount;
-    OAMLineEntry* lineSprites;
+    OAMLineEntry *lineSprites;
 
     u8 fetchedEntryCount;
-    OAMEntry* fetchedEntries;
-    OAMLineEntry* lineEntryArray;
+    OAMEntry *fetchedEntries;
+    OAMLineEntry *lineEntryArray;
     u8 windowLine;
 
     void tick();
@@ -41,7 +41,7 @@ public:
     bool windowVisible();
     void loadLineSpites();
 
-    void setStateMachine(PpuStateMachine* _ppuSm);
+    void setStateMachine(PpuStateMachine *_ppuSm);
 
     u8 oamRead(u16 address, bool inner = false);
     void oamWrite(u16 address, u8 value, bool inner = false);
@@ -53,7 +53,7 @@ public:
     u32 getCurrentFrame();
     void setCurrentFrame(u32 value);
 
-    FIFO* getFIFO();
+    FIFO *getFIFO();
 
     u8 fetchSpritePixels(int bit, u8 color, u8 bgColor);
     void pipilineLoadWindowTile();
@@ -64,9 +64,8 @@ public:
     void pipelineProcess();
     bool pipelineFifoAdd();
 
-    u8* getVideoBuffer();
+    u8 *getVideoBuffer();
 
     // debug
-    u8* getVRAM();
+    u8 *getVRAM();
 };
-

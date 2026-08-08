@@ -1,15 +1,17 @@
 #include "rom_only.h"
 
-RomOnly::RomOnly(u32 _romSize, u8* _romData) :
-    CartridgeMemory(_romSize, _romData)
-{}
+RomOnly::RomOnly(u32 _romSize, u8 *_romData) : CartridgeMemory(_romSize, _romData)
+{
+}
 
 u8 RomOnly::read(u16 address)
 {
-    if (address <= 0x7FFF) {
+    if (address <= 0x7FFF)
+    {
         return romData[address];
     }
-    else {
+    else
+    {
         return 0xFF;
     }
 }

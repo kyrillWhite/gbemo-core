@@ -1,19 +1,21 @@
 #include <filesystem>
 #include "cartridge.h"
 
-Cartridge::Cartridge():
-    romSize(0),
-    romData(nullptr),
-    memory(nullptr),
-    header(nullptr)
-{}
+Cartridge::Cartridge() : romSize(0),
+                         romData(nullptr),
+                         memory(nullptr),
+                         header(nullptr)
+{
+}
 
 Cartridge::~Cartridge()
 {
-    if (memory != nullptr) {
+    if (memory != nullptr)
+    {
         delete memory;
     }
-    if (romData != nullptr) {
+    if (romData != nullptr)
+    {
         delete[] romData;
     }
 }
@@ -21,29 +23,34 @@ Cartridge::~Cartridge()
 int Cartridge::validateChecksum()
 {
     u8 checksum = 0;
-    for (u16 address = 0x0134; address <= 0x014C; address++) {
+    for (u16 address = 0x0134; address <= 0x014C; address++)
+    {
         checksum = checksum - romData[address] - 1;
     }
 
-    if (romData[0x014D] != checksum) {
+    if (romData[0x014D] != checksum)
+    {
         printf("Invalid checksum: %#04X\n\n", checksum);
         return -1;
     }
-    else {
+    else
+    {
         printf("Checksum is valid: %#04X\n\n", checksum);
         return 0;
     }
 }
 
-void Cartridge::printHeaderInfo(const char* filename)
+void Cartridge::printHeaderInfo(const char *filename)
 {
     auto cartridgeTypeName = cartridgeTypeNames.at(header->cartridgeType);
     std::string keyStr(header->licenseeCode, 2);
-    const char* licenseeName;
-    if (licenseeNames.contains(keyStr)) {
+    const char *licenseeName;
+    if (licenseeNames.contains(keyStr))
+    {
         licenseeName = licenseeNames.at(keyStr);
     }
-    else {
+    else
+    {
         licenseeName = "Unknown";
     }
 
@@ -61,11 +68,12 @@ void Cartridge::printHeaderInfo(const char* filename)
     printf("\tChecksum              %#40X\n\n", header->headerChecksum);
 }
 
-int Cartridge::readRomFile(const char* filename)
+int Cartridge::readRomFile(const char *filename)
 {
-    FILE* filp;
+    FILE *filp;
     fopen_s(&filp, filename, "rb");
-    if (!filp) {
+    if (!filp)
+    {
         printf("Could not open file %s\n", filename);
         return -1;
     }
@@ -77,24 +85,26 @@ int Cartridge::readRomFile(const char* filename)
     fread(romData, sizeof(u8), romSize, filp);
     fclose(filp);
 
-    header = (CartridgeHeader*)(romData + 0x0100);
+    header = (CartridgeHeader *)(romData + 0x0100);
     printHeaderInfo(filename);
 
-    if (validateChecksum()) {
+    if (validateChecksum())
+    {
         return -1;
     }
-    if (initMemory(filename)) {
+    if (initMemory(filename))
+    {
         return -1;
     }
 
     return 0;
 }
 
-int Cartridge::initMemory(const char* filename)
+int Cartridge::initMemory(const char *filename)
 {
-    BatteryRam* battery = nullptr;
+    BatteryRam *battery = nullptr;
     u32 ramSize = getRamSize(header->ramSize);
-    
+
     switch (header->cartridgeType)
     {
     case CartridgeType::ROM_ONLY:
@@ -136,7 +146,7 @@ int Cartridge::initMemory(const char* filename)
     return 0;
 }
 
-const char* Cartridge::getSaveFilename(const char* filename)
+const char *Cartridge::getSaveFilename(const char *filename)
 {
     thread_local std::string buf;
     std::filesystem::path p(filename);
@@ -146,7 +156,8 @@ const char* Cartridge::getSaveFilename(const char* filename)
 
 u32 Cartridge::getRamSize(u8 type)
 {
-    switch (type) {
+    switch (type)
+    {
     case 0:
     case 1:
         return 0;
@@ -164,10 +175,12 @@ u32 Cartridge::getRamSize(u8 type)
     }
 }
 
-u8 Cartridge::read(u16 address) {
+u8 Cartridge::read(u16 address)
+{
     return memory->read(address);
 }
 
-void Cartridge::write(u16 address, u8 value) {
+void Cartridge::write(u16 address, u8 value)
+{
     memory->write(address, value);
 }

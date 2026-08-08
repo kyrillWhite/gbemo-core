@@ -19,38 +19,43 @@ u16 NoiseChannel::timerPeriod()
 {
     u8 divider = NR[3] & 0b111;
     u8 shift = NR[3] >> 4 & 0b1111;
-    if (divider) {
+    if (divider)
+    {
         return u64(4194304) * u64(divider) * (u64(1) << shift) / u64(262144);
     }
-    else {
+    else
+    {
         return u64(4194304) * (u64(1) << shift) / u64(524288);
     }
 }
 
-NoiseChannel::NoiseChannel() :
-    lengthTimer(0),
-    envelopeTimer(0),
-    volume(15),
-    envelopeIncrease(true),
-    timer(timerPeriod()),
-    LFSR(0x7FFF)
+NoiseChannel::NoiseChannel() : lengthTimer(0),
+                               envelopeTimer(0),
+                               volume(15),
+                               envelopeIncrease(true),
+                               timer(timerPeriod()),
+                               LFSR(0x7FFF)
 {
-    for (int i = 0; i < 5; i++) {
+    for (int i = 0; i < 5; i++)
+    {
         NR[i] = 0;
     }
     enabled = true;
 }
 
-void NoiseChannel::tick() {
+void NoiseChannel::tick()
+{
     timer--;
-    if (timer == 0) {
+    if (timer == 0)
+    {
         timer = timerPeriod();
 
         bool b0 = bit(LFSR, 0);
         bool b1 = bit(LFSR, 1);
         bool value = b0 ^ b1;
         LFSR = set_bit(LFSR, value, 15);
-        if (LFSRWidth()) {
+        if (LFSRWidth())
+        {
             LFSR = set_bit(LFSR, value, 7);
         }
         LFSR >>= 1;
@@ -59,15 +64,18 @@ void NoiseChannel::tick() {
 
 void NoiseChannel::lengthTimerTick()
 {
-    if (!bit(NR[4], 6)) {
+    if (!bit(NR[4], 6))
+    {
         return;
     }
-    if (lengthTimer == 0) {
+    if (lengthTimer == 0)
+    {
         return;
     }
     lengthTimer--;
 
-    if (lengthTimer == 0) {
+    if (lengthTimer == 0)
+    {
         enabled = false;
     }
 }
@@ -82,7 +90,8 @@ void NoiseChannel::write(u16 address, u8 value)
 {
     address = address - 0xFF1F;
     NR[address] = value;
-    switch (address) {
+    switch (address)
+    {
     case 1:
         resetLengthTimer();
         break;
@@ -92,7 +101,8 @@ void NoiseChannel::write(u16 address, u8 value)
         resetEnvelopeTimer();
         break;
     case 4:
-        if (bit(value, 7)) {
+        if (bit(value, 7))
+        {
             trigger();
         }
         break;
@@ -102,7 +112,8 @@ void NoiseChannel::write(u16 address, u8 value)
 void NoiseChannel::trigger()
 {
     enabled = true;
-    if (lengthTimer == 0) {
+    if (lengthTimer == 0)
+    {
         resetLengthTimer();
     }
     timer = timerPeriod();
@@ -130,16 +141,20 @@ double NoiseChannel::getSample()
 void NoiseChannel::envelopeTimerTick()
 {
     u8 envelopePeriod = NR[2] & 0b111;
-    if (envelopePeriod == 0) {
+    if (envelopePeriod == 0)
+    {
         return;
     }
     envelopeTimer--;
-    if (envelopeTimer == 0) {
+    if (envelopeTimer == 0)
+    {
         envelopeTimer = envelopePeriod;
-        if (envelopeIncrease && volume < 15) {
+        if (envelopeIncrease && volume < 15)
+        {
             volume++;
         }
-        else if (!envelopeIncrease && volume > 0) {
+        else if (!envelopeIncrease && volume > 0)
+        {
             volume--;
         }
     }

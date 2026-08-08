@@ -13,4 +13,3 @@ public:
     u16 getAddress();
     void setAddress(u16 _address);
 };
-

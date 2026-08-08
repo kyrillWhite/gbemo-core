@@ -1,7 +1,8 @@
 #include "idu.h"
 
 IDU::IDU()
-{}
+{
+}
 
 u16 IDU::increment(u16 value)
 {

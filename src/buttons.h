@@ -1,5 +1,6 @@
 #pragma once
-enum Button {
+enum Button
+{
     B_START,
     B_SELECT,
     B_A,

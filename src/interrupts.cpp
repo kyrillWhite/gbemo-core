@@ -1,8 +1,7 @@
 #include "interrupts.h"
 
-Interrupts::Interrupts():
-    IE(0),
-    IF(0)
+Interrupts::Interrupts() : IE(0),
+                           IF(0)
 {
 }
 

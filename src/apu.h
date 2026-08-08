@@ -7,7 +7,6 @@
 class APU
 {
 private:
-
     u8 NR52; // 0xFF26 audio master control
     u8 NR51; // 0xFF25 sound panning
     u8 NR50; // 0xFF24 master volume & VIN panning
@@ -16,10 +15,10 @@ private:
     double leftCapacitor;
     double rightCapacitor;
 
-    PulseChannel* ch1;
-    PulseChannel* ch2;
-    WaveChannel* ch3;
-    NoiseChannel* ch4;
+    PulseChannel *ch1;
+    PulseChannel *ch2;
+    WaveChannel *ch3;
+    NoiseChannel *ch4;
 
     double leftHighPass(double in, bool dacsEnabled);
     double rightHighPass(double in, bool dacsEnabled);
@@ -38,4 +37,3 @@ public:
     i16 getLeftSample();
     i16 getRightSample();
 };
-

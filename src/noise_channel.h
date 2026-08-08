@@ -12,7 +12,7 @@ private:
     u8 envelopeTimer;
     void resetEnvelopeTimer();
     bool envelopeIncrease;
-    u8 volume; //0-15
+    u8 volume; // 0-15
 
     // NR43
     u16 LFSR;
@@ -35,4 +35,3 @@ public:
     bool isEnabled() override;
     double getSample() override;
 };
-

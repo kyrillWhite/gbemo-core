@@ -10,4 +10,3 @@ public:
     u16 increment(u16 value);
     u16 decrement(u16 value);
 };
-

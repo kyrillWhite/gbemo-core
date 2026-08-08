@@ -5,15 +5,14 @@
 class Core
 {
 private:
-    RegisterFile* registerFile;
-    IDU* idu;
-    ALU* alu;
-    ControlUnit* controlUnit;
+    RegisterFile *registerFile;
+    IDU *idu;
+    ALU *alu;
+    ControlUnit *controlUnit;
 
 public:
-    Core(Bus* bus, Interrupts* _interrupts, bool skipBoot);
+    Core(Bus *bus, Interrupts *_interrupts, bool skipBoot);
     ~Core();
 
     void tick();
 };
-

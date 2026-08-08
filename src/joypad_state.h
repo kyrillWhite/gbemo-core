@@ -1,6 +1,7 @@
 #pragma once
 
- struct JoypadState {
+struct JoypadState
+{
     bool start;
     bool select;
     bool a;

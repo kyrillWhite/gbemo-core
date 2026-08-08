@@ -1,7 +1,8 @@
 #include "alu.h"
 
-ALU::ALU(RegisterFile* _registerFile): registerFile(_registerFile)
-{}
+ALU::ALU(RegisterFile *_registerFile) : registerFile(_registerFile)
+{
+}
 
 void ALU::copyR8ToR8(u8 from, u8 to)
 {
@@ -23,20 +24,8 @@ void ALU::copyValToR16(u8 to, u16 value)
     registerFile->setR16(to, value);
 }
 
-u8 ALU::add(u8 v1, u8 v2, u8& carryPerBit, bool carryFlag)
+u8 ALU::add(u8 v1, u8 v2, u8 &carryPerBit, bool carryFlag)
 {
-    //u8 sum = v1 + v2;
-    //carryPerBit = (v1 & v2) | ((v1 | v2) & ~sum);
-
-    //if (carryFlag) {
-    //    u8 sumCF = sum + 1;
-    //    u8 carryPerBitCF = (sum & 1) | ((sum | 1) & ~sumCF);
-    //    sum = sumCF;
-    //    carryPerBit |= carryPerBitCF;
-    //}
-
-    //return sum;
-
     unsigned int carry_in = carryFlag ? 1 : 0;
     unsigned int result = v1 + v2 + carry_in;
 
@@ -44,26 +33,16 @@ u8 ALU::add(u8 v1, u8 v2, u8& carryPerBit, bool carryFlag)
     bool fullCarry = (result > 0xFF);
 
     carryPerBit = 0;
-    if (halfCarry) carryPerBit |= (1 << 3);
-    if (fullCarry) carryPerBit |= (1 << 7);
+    if (halfCarry)
+        carryPerBit |= (1 << 3);
+    if (fullCarry)
+        carryPerBit |= (1 << 7);
 
     return static_cast<u8>(result & 0xFF);
 }
 
-u8 ALU::sub(u8 v1, u8 v2, u8& carryPerBit, bool carryFlag)
+u8 ALU::sub(u8 v1, u8 v2, u8 &carryPerBit, bool carryFlag)
 {
-    /*u8 diff = v1 - v2;
-    carryPerBit = ((~v1) & v2) | ((~(v1 ^ v2)) & diff);
-
-    if (carryFlag) {
-        u8 diffBF = diff - 1;
-        u8 carryPerBitBF = ((~diff) & 1) | ((~(diff ^ 1)) & diffBF);
-        diff = diffBF;
-        carryPerBit |= carryPerBitBF;
-    }
-
-    return diff;*/
-
     unsigned int carry_in = carryFlag ? 1 : 0;
     int diff = static_cast<int>(v1) - static_cast<int>(v2) - carry_in;
 
@@ -71,8 +50,10 @@ u8 ALU::sub(u8 v1, u8 v2, u8& carryPerBit, bool carryFlag)
     bool fullCarry = (v1 < (v2 + carry_in));
 
     carryPerBit = 0;
-    if (halfCarry) carryPerBit |= (1 << 3);
-    if (fullCarry) carryPerBit |= (1 << 7);
+    if (halfCarry)
+        carryPerBit |= (1 << 3);
+    if (fullCarry)
+        carryPerBit |= (1 << 7);
 
     return static_cast<u8>(diff & 0xFF);
 }
@@ -97,54 +78,8 @@ u8 ALU::_not(u8 value)
     return ~value;
 }
 
-//// note: assumes a is a uint8_t and wraps from 0xff to 0
-//if (!n) {  // after an addition, adjust if (half-)carry occurred or if result is out of bounds
-//    if (c || a > 0x99) { a += 0x60; c = 1; }
-//    if (h || (a & 0x0f) > 0x09) { a += 0x6; }
-//}
-//else {  // after a subtraction, only adjust if (half-)carry occurred
-//    if (c) { a -= 0x60; }
-//    if (h) { a -= 0x6; }
-//}
-//// these flags are always updated
-//z = (a == 0); // the usual z flag
-//h = 0; // h flag is always cleared
-void ALU::decimalAdjust(u8& a, bool& z, bool& n, bool& h, bool& c)
+void ALU::decimalAdjust(u8 &a, bool &z, bool &n, bool &h, bool &c)
 {
-    //u8 u = 0;
-    //int fc = 0;
-
-    //if (h || (!n && (a & 0xF) > 9)) {
-    //    u = 6;
-    //}
-
-    //if (c || (!n && a > 0x99)) {
-    //    u |= 0x60;
-    //    fc = 1;
-    //}
-
-    //a += n ? -u : u;
-
-    //z = a == 0;
-    //h = 0;
-    //c = fc;
-    // note: assumes a is a uint8_t and wraps from 0xff to 0
-    
-    
-    
-    //if (!n) {  // after an addition, adjust if (half-)carry occurred or if result is out of bounds
-    //    if (c || a > 0x99) { a += 0x60; c = 1; }
-    //    if (h || (a & 0x0f) > 0x09) { a += 0x6; }
-    //}
-    //else {  // after a subtraction, only adjust if (half-)carry occurred
-    //    if (c) { a -= 0x60; }
-    //    if (h) { a -= 0x6; }
-    //}
-    //// these flags are always updated
-    //z = (a == 0); // the usual z flag
-    //h = 0; // h flag is always cleared
-
-
     int tmp = a;
     u8 FLAG_Z = z << 7;
     u8 FLAG_N = n << 6;
@@ -152,14 +87,17 @@ void ALU::decimalAdjust(u8& a, bool& z, bool& n, bool& h, bool& c)
     u8 FLAG_C = c << 4;
     u8 m_F = FLAG_Z | FLAG_N | FLAG_H | FLAG_C;
 
-    if (!(m_F & FLAG_N)) {
+    if (!(m_F & FLAG_N))
+    {
         if ((m_F & FLAG_H) || (tmp & 0x0F) > 9)
             tmp += 6;
         if ((m_F & FLAG_C) || tmp > 0x9F)
             tmp += 0x60;
     }
-    else {
-        if (m_F & FLAG_H) {
+    else
+    {
+        if (m_F & FLAG_H)
+        {
             tmp -= 6;
             if (!(m_F & FLAG_C))
                 tmp &= 0xFF;
@@ -173,59 +111,27 @@ void ALU::decimalAdjust(u8& a, bool& z, bool& n, bool& h, bool& c)
     a = tmp & 0xFF;
     if (!a)
         m_F |= FLAG_Z;
-
 }
 
-void ALU::decimalAdjust(u8& a, u8& m_F)
+void ALU::decimalAdjust(u8 &a, u8 &m_F)
 {
-    //u8 u = 0;
-    //int fc = 0;
-
-    //if (h || (!n && (a & 0xF) > 9)) {
-    //    u = 6;
-    //}
-
-    //if (c || (!n && a > 0x99)) {
-    //    u |= 0x60;
-    //    fc = 1;
-    //}
-
-    //a += n ? -u : u;
-
-    //z = a == 0;
-    //h = 0;
-    //c = fc;
-    // note: assumes a is a uint8_t and wraps from 0xff to 0
-
-
-
-    //if (!n) {  // after an addition, adjust if (half-)carry occurred or if result is out of bounds
-    //    if (c || a > 0x99) { a += 0x60; c = 1; }
-    //    if (h || (a & 0x0f) > 0x09) { a += 0x6; }
-    //}
-    //else {  // after a subtraction, only adjust if (half-)carry occurred
-    //    if (c) { a -= 0x60; }
-    //    if (h) { a -= 0x6; }
-    //}
-    //// these flags are always updated
-    //z = (a == 0); // the usual z flag
-    //h = 0; // h flag is always cleared
-
-
     int tmp = a;
     u8 FLAG_Z = 1 << 7;
     u8 FLAG_N = 1 << 6;
     u8 FLAG_H = 1 << 5;
     u8 FLAG_C = 1 << 4;
 
-    if (!(m_F & FLAG_N)) {
+    if (!(m_F & FLAG_N))
+    {
         if ((m_F & FLAG_H) || (tmp & 0x0F) > 9)
             tmp += 6;
         if ((m_F & FLAG_C) || tmp > 0x9F)
             tmp += 0x60;
     }
-    else {
-        if (m_F & FLAG_H) {
+    else
+    {
+        if (m_F & FLAG_H)
+        {
             tmp -= 6;
             if (!(m_F & FLAG_C))
                 tmp &= 0xFF;
@@ -239,50 +145,49 @@ void ALU::decimalAdjust(u8& a, u8& m_F)
     a = tmp & 0xFF;
     if (!a)
         m_F |= FLAG_Z;
-
 }
 
-u8 ALU::rotateLeftCircular(u8 value, bool& carry)
+u8 ALU::rotateLeftCircular(u8 value, bool &carry)
 {
     bool bit7 = bit(value, 7);
     carry = bit7;
     return value << 1 | bit7;
 }
 
-u8 ALU::rotateRightCircular(u8 value, bool& carry)
+u8 ALU::rotateRightCircular(u8 value, bool &carry)
 {
     bool bit0 = value & 1;
     carry = bit0;
     return value >> 1 | bit0 << 7;
 }
 
-u8 ALU::rotateLeft(u8 value, bool& carry)
+u8 ALU::rotateLeft(u8 value, bool &carry)
 {
     bool prevCarry = carry;
     carry = bit(value, 7);
     return value << 1 | prevCarry;
 }
 
-u8 ALU::rotateRight(u8 value, bool& carry)
+u8 ALU::rotateRight(u8 value, bool &carry)
 {
     bool prevCarry = carry;
     carry = value & 1;
     return value >> 1 | prevCarry << 7;
 }
 
-u8 ALU::shiftLeftA(u8 value, bool& carry)
+u8 ALU::shiftLeftA(u8 value, bool &carry)
 {
     carry = bit(value, 7);
     return value << 1;
 }
 
-u8 ALU::shiftRightA(u8 value, bool& carry)
+u8 ALU::shiftRightA(u8 value, bool &carry)
 {
     carry = value & 1;
     return (value & 0b10000000) | value >> 1;
 }
 
-u8 ALU::shiftRightL(u8 value, bool& carry)
+u8 ALU::shiftRightL(u8 value, bool &carry)
 {
     carry = value & 1;
     return value >> 1;

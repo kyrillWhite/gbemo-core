@@ -6,9 +6,9 @@
 class MBC1 : public CartridgeMemory
 {
 private:
-    BatteryRam* battery;
+    BatteryRam *battery;
     u32 ramSize;
-    u8* ramData;
+    u8 *ramData;
 
     // registers
     bool ramEnable;
@@ -18,10 +18,9 @@ private:
     bool bankingMode;
 
 public:
-    MBC1(u32 _romSize, u8* _romData, u32 ramSize = 0, BatteryRam* _battery = nullptr);
+    MBC1(u32 _romSize, u8 *_romData, u32 ramSize = 0, BatteryRam *_battery = nullptr);
     ~MBC1();
 
     u8 read(u16 address) override;
     void write(u16 address, u8 value) override;
 };
-

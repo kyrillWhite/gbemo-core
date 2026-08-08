@@ -1,6 +1,6 @@
 #include "core.h"
 
-Core::Core(Bus* bus, Interrupts* _interrupts, bool skipBoot)
+Core::Core(Bus *bus, Interrupts *_interrupts, bool skipBoot)
 {
     registerFile = new RegisterFile(skipBoot);
     idu = new IDU();

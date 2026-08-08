@@ -33,10 +33,9 @@ void Joypad::setButtonState(Button button, bool isDown)
     }
 }
 
-Joypad::Joypad():
-    state{0, 0, 0, 0, 0, 0, 0, 0},
-    buttonSelected(false),
-    dirSelected(false)
+Joypad::Joypad() : state{0, 0, 0, 0, 0, 0, 0, 0},
+                   buttonSelected(false),
+                   dirSelected(false)
 {
 }
 
@@ -44,32 +43,42 @@ u8 Joypad::read()
 {
     u8 output = 0xCF;
 
-    if (!buttonSelected) {
-        if (state.start) {
+    if (!buttonSelected)
+    {
+        if (state.start)
+        {
             output &= ~(1 << 3);
         }
-        if (state.select) {
+        if (state.select)
+        {
             output &= ~(1 << 2);
         }
-        if (state.a) {
+        if (state.a)
+        {
             output &= ~(1 << 0);
         }
-        if (state.b) {
+        if (state.b)
+        {
             output &= ~(1 << 1);
         }
     }
 
-    if (!dirSelected) {
-        if (state.left) {
+    if (!dirSelected)
+    {
+        if (state.left)
+        {
             output &= ~(1 << 1);
         }
-        if (state.right) {
+        if (state.right)
+        {
             output &= ~(1 << 0);
         }
-        if (state.up) {
+        if (state.up)
+        {
             output &= ~(1 << 2);
         }
-        if (state.down) {
+        if (state.down)
+        {
             output &= ~(1 << 3);
         }
     }

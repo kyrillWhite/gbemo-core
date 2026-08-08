@@ -1,7 +1,8 @@
 #pragma once
 #include "common.h"
 
-enum MonoColor : u8 {
+enum MonoColor : u8
+{
     White = 0,
     LightGray = 1,
     DarkGray = 2,

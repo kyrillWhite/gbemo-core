@@ -1,6 +1,5 @@
 #include "wave_channel.h"
 
-
 u8 WaveChannel::getWaveSample(u8 index)
 {
     u8 sampleByte = wavePattern[index / 2];
@@ -25,13 +24,13 @@ u16 WaveChannel::getPeriod()
     return (2048 - freq) * 2;
 }
 
-WaveChannel::WaveChannel() :
-    lengthTimer(0),
-    wavePos(0),
-    volume(0),
-    periodDivider(0)
+WaveChannel::WaveChannel() : lengthTimer(0),
+                             wavePos(0),
+                             volume(0),
+                             periodDivider(0)
 {
-    for (int i = 0; i < 16; i++) {
+    for (int i = 0; i < 16; i++)
+    {
         wavePattern[i] = 0;
     }
     enabled = true;
@@ -40,11 +39,13 @@ WaveChannel::WaveChannel() :
 void WaveChannel::tick()
 {
     periodDivider--;
-    if (periodDivider == 0) {
+    if (periodDivider == 0)
+    {
         periodDivider = getPeriod();
 
         wavePos++;
-        if (wavePos == 32) {
+        if (wavePos == 32)
+        {
             wavePos = 0;
         }
     }
@@ -52,22 +53,26 @@ void WaveChannel::tick()
 
 void WaveChannel::lengthTimerTick()
 {
-    if (!bit(NR[4], 6)) {
+    if (!bit(NR[4], 6))
+    {
         return;
     }
-    if (lengthTimer == 0) {
+    if (lengthTimer == 0)
+    {
         return;
     }
     lengthTimer--;
 
-    if (lengthTimer == 0) {
+    if (lengthTimer == 0)
+    {
         enabled = false;
     }
 }
 
 u8 WaveChannel::read(u16 address)
 {
-    if (address >= 0xFF30 && address <= 0xFF3F) {
+    if (address >= 0xFF30 && address <= 0xFF3F)
+    {
         return 0xFF;
     }
 
@@ -77,15 +82,18 @@ u8 WaveChannel::read(u16 address)
 
 void WaveChannel::write(u16 address, u8 value)
 {
-    if (address >= 0xFF30 && address <= 0xFF3F) {
+    if (address >= 0xFF30 && address <= 0xFF3F)
+    {
         // TODO: write only if channel "enabled"
         address = address - 0xFF30;
         wavePattern[address] = value;
     }
-    else {
+    else
+    {
         address = address - 0xFF1A;
         NR[address] = value;
-        switch (address) {
+        switch (address)
+        {
         case 1:
             resetLengthTimer();
             break;
@@ -93,7 +101,8 @@ void WaveChannel::write(u16 address, u8 value)
             volume = getVolume();
             break;
         case 4:
-            if (bit(value, 7)) {
+            if (bit(value, 7))
+            {
                 trigger();
             }
             break;
@@ -104,7 +113,8 @@ void WaveChannel::write(u16 address, u8 value)
 void WaveChannel::trigger()
 {
     enabled = true;
-    if (lengthTimer == 0) {
+    if (lengthTimer == 0)
+    {
         resetLengthTimer();
     }
     periodDivider = getPeriod();
@@ -126,7 +136,8 @@ double WaveChannel::getSample()
 {
     u8 sample = 0;
     u8 waveSample = getWaveSample(wavePos);
-    switch (volume) {
+    switch (volume)
+    {
     case 0:
         sample = 0;
         break;
@@ -139,7 +150,6 @@ double WaveChannel::getSample()
     case 3:
         sample = waveSample >> 2;
         break;
-
     }
     return (sample * 2 - 15) / 15.;
 }

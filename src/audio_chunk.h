@@ -1,9 +1,9 @@
 #pragma once
-//#include "common.h"
+// #include "common.h"
 //
-//#define AUDIO_CHUNK_SIZE 1024
+// #define AUDIO_CHUNK_SIZE 1024
 //
-//struct AudioChunk {
-//    i16 data[AUDIO_CHUNK_SIZE];
-//    AudioChunk* next;
-//};
+// struct AudioChunk {
+//     i16 data[AUDIO_CHUNK_SIZE];
+//     AudioChunk* next;
+// };

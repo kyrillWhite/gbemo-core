@@ -1,7 +1,8 @@
 #pragma once
 #include "common.h"
 
-struct OAMEntry {
+struct OAMEntry
+{
     u8 yPos;
     u8 xPos;
     u8 tile;
@@ -14,7 +15,8 @@ struct OAMEntry {
     u8 priority : 1;
 };
 
-struct OAMLineEntry {
+struct OAMLineEntry
+{
     OAMEntry oam;
-    OAMLineEntry* next;
+    OAMLineEntry *next;
 };
