@@ -10,7 +10,7 @@ separate repository that consumes this package.
 
 ## API
 
-The whole surface is `Emu` in [emu.h](src/emu.h):
+The whole surface is `Emu` in [emu.h](include/emu.h):
 
 ```cpp
 #include "emu.h"
@@ -92,5 +92,12 @@ g++ -std=c++20 -Igbemo-1.0.0-x64/include main.cpp \
 ## Layout
 
 ```
-src/       emulator core and public headers
+include/       public headers (emu.h, common.h, buttons.h, mono_color.h)
+src/cpu/       CPU: core, control unit, ALU, IDU, register file
+src/memory/    memory map, buses, I/O registers
+src/cartridge/ cartridge header and MBCs
+src/video/     PPU, pixel FIFO, LCD, OAM DMA
+src/audio/     APU and its channels
+src/system/    Emu façade, clock, timer, interrupts, joypad
+src/debug/     serial-output test harness reader
 ```

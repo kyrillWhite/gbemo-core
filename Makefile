@@ -58,10 +58,12 @@ ifeq ($(ARCH),x86)
 	endif
 endif
 
-CXXFLAGS_BASE := -std=c++20 -Isrc $(ARCH_FLAGS)
+CXXFLAGS_BASE := -std=c++20 -Iinclude -Isrc $(ARCH_FLAGS)
 LDFLAGS := $(ARCH_FLAGS)
 
-MY_SRC := $(wildcard src/*.cpp)
+# Sources live in per-subsystem directories under src/; headers are included by
+# their path relative to src/ (e.g. "cpu/alu.h"), public ones from include/.
+MY_SRC := $(wildcard src/*.cpp) $(wildcard src/*/*.cpp)
 OBJ_DIR_DEBUG = obj/debug/$(ARCH)
 OBJ_DIR_RELEASE = obj/release/$(ARCH)
 BIN_DIR_DEBUG = bin/debug/$(ARCH)
@@ -82,7 +84,7 @@ ifeq ($(SHARED),1)
 endif
 
 # What a release ships: the public headers plus the optimized static library.
-PUBLIC_HEADERS := src/emu.h src/common.h src/buttons.h src/mono_color.h
+PUBLIC_HEADERS := $(wildcard include/*.h)
 DIST_NAME := gbemo-$(VERSION)-$(ARCH)
 DIST_ROOT := dist
 DIST_DIR := $(DIST_ROOT)/$(DIST_NAME)
@@ -113,17 +115,14 @@ $(DLL_RELEASE): $(MY_OBJ_RELEASE) | $(BIN_DIR_RELEASE)
 	$(CXX) -shared $(LDFLAGS) $(MY_OBJ_RELEASE) -o $@ \
 		-Wl,--out-implib,$(BIN_DIR_RELEASE)/libgbemo.dll.a
 
-$(OBJ_DIR_DEBUG)/%.o: src/%.cpp | $(OBJ_DIR_DEBUG)
+# The object tree mirrors src/, so each recipe creates its own subdirectory.
+$(OBJ_DIR_DEBUG)/%.o: src/%.cpp
+	@$(MKDIR) $(@D)
 	$(CXX) $(CXXFLAGS) -c $< -o $@
 
-$(OBJ_DIR_RELEASE)/%.o: src/%.cpp | $(OBJ_DIR_RELEASE)
+$(OBJ_DIR_RELEASE)/%.o: src/%.cpp
+	@$(MKDIR) $(@D)
 	$(CXX) $(CXXFLAGS) -c $< -o $@
-
-$(OBJ_DIR_DEBUG):
-	@$(MKDIR) $(OBJ_DIR_DEBUG)
-
-$(OBJ_DIR_RELEASE):
-	@$(MKDIR) $(OBJ_DIR_RELEASE)
 
 $(BIN_DIR_DEBUG):
 	@$(MKDIR) $(BIN_DIR_DEBUG)
