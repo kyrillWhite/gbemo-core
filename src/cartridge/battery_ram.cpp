@@ -1,41 +1,75 @@
+#include <cstdio>
+#include <cstring>
 #include "cartridge/battery_ram.h"
-#include <fstream>
-#include <filesystem>
 
-BatteryRam::BatteryRam(const char *_filename) : filename(_filename)
-{
-}
+static constexpr char SAVE_EXTENSION[] = ".sav";
 
-bool BatteryRam::saveExists()
+BatteryRam::BatteryRam(const char *romFilename) : filename{}
 {
-    return std::filesystem::exists(filename);
-}
-
-void BatteryRam::save(u8 *ramData, u32 ramSize)
-{
-    std::ofstream out(filename, std::ios::binary | std::ios::trunc);
-    if (!out)
+    const char *stem = romFilename;
+    for (const char *c = romFilename; *c != '\0'; c++)
     {
-        printf("Save error: cannot open \'%s\' for writing\n", filename);
+        if (*c == '/' || *c == '\\')
+        {
+            stem = c + 1;
+        }
+    }
+
+    const char *dot = std::strrchr(stem, '.');
+    u32 stemSize = static_cast<u32>(dot ? dot - stem : std::strlen(stem));
+
+    // leave room for the extension and the terminator
+    const u32 maxStemSize = MAX_FILENAME_SIZE - sizeof(SAVE_EXTENSION);
+    if (stemSize > maxStemSize)
+    {
+        stemSize = maxStemSize;
+    }
+
+    std::memcpy(filename.data(), stem, stemSize);
+    std::memcpy(filename.data() + stemSize, SAVE_EXTENSION, sizeof(SAVE_EXTENSION));
+}
+
+bool BatteryRam::isSaveExist()
+{
+    FILE *filp;
+    fopen_s(&filp, filename.data(), "rb");
+    if (!filp)
+    {
+        return false;
+    }
+    fclose(filp);
+    return true;
+}
+
+void BatteryRam::save(const u8 *ramData, u32 ramSize)
+{
+    FILE *filp;
+    fopen_s(&filp, filename.data(), "wb");
+    if (!filp)
+    {
+        printf("Save error: cannot open \'%s\' for writing\n", filename.data());
         return;
     }
-    out.write(reinterpret_cast<const char *>(ramData), static_cast<std::streamsize>(ramSize));
-    if (!out)
+
+    if (fwrite(ramData, sizeof(u8), ramSize, filp) != ramSize)
     {
-        printf("Save error: failed to write all SRAM to \'%s\'\n", filename);
+        printf("Save error: failed to write all SRAM to \'%s\'\n", filename.data());
     }
+    fclose(filp);
 }
 
 void BatteryRam::load(u8 *ramData, u32 ramSize)
 {
-    std::ifstream in(filename, std::ios::binary);
-    if (!in)
+    FILE *filp;
+    fopen_s(&filp, filename.data(), "rb");
+    if (!filp)
     {
         return;
     }
-    in.read(reinterpret_cast<char *>(ramData), static_cast<std::streamsize>(ramSize));
-    if (!in)
+
+    if (fread(ramData, sizeof(u8), ramSize, filp) != ramSize)
     {
-        printf("Load warning: only partially read SRAM from \'%s\'\n", filename);
+        printf("Load warning: only partially read SRAM from \'%s\'\n", filename.data());
     }
+    fclose(filp);
 }

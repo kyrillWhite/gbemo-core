@@ -1,7 +1,12 @@
 #pragma once
 
+#include <array>
+#include <optional>
+#include <variant>
+
 #include "common.h"
 #include "cartridge/cartridge_header.h"
+#include "cartridge/cartridge_limits.h"
 #include "cartridge/licensee.h"
 
 #include "cartridge/rom_only.h"
@@ -12,20 +17,22 @@ class Cartridge
 {
 private:
     u32 romSize;
-    u8 *romData;
+    std::array<u8, MAX_ROM_SIZE> romData;
+
+    std::optional<BatteryRam> battery;
+    std::variant<std::monostate, RomOnly, MBC1, MBC2> memoryStorage;
 
     int validateChecksum();
     void printHeaderInfo(const char *filename);
     int initMemory(const char *filename);
-    const char *getSaveFilename(const char *filename);
     u32 getRamSize(u8 type);
 
 public:
     CartridgeMemory *memory;
-    CartridgeHeader *header;
+    const CartridgeHeader *header;
 
     Cartridge();
-    ~Cartridge();
+
     int readRomFile(const char *filename);
 
     u8 read(u16 address);

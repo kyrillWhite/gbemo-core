@@ -58,7 +58,7 @@ ifeq ($(ARCH),x86)
 	endif
 endif
 
-CXXFLAGS_BASE := -std=c++20 -Iinclude -Isrc $(ARCH_FLAGS)
+CXXFLAGS_BASE := -std=c++20 -Iinclude -Isrc $(ARCH_FLAGS) -MMD -MP
 LDFLAGS := $(ARCH_FLAGS)
 
 # Sources live in per-subsystem directories under src/; headers are included by
@@ -70,6 +70,8 @@ BIN_DIR_DEBUG = bin/debug/$(ARCH)
 BIN_DIR_RELEASE = bin/release/$(ARCH)
 MY_OBJ_DEBUG = $(patsubst src/%.cpp,$(OBJ_DIR_DEBUG)/%.o,$(MY_SRC))
 MY_OBJ_RELEASE = $(patsubst src/%.cpp,$(OBJ_DIR_RELEASE)/%.o,$(MY_SRC))
+MY_DEP_DEBUG = $(MY_OBJ_DEBUG:.o=.d)
+MY_DEP_RELEASE = $(MY_OBJ_RELEASE:.o=.d)
 
 LIB_DEBUG = $(BIN_DIR_DEBUG)/libgbemo.a
 LIB_RELEASE = $(BIN_DIR_RELEASE)/libgbemo.a
@@ -129,6 +131,8 @@ $(BIN_DIR_DEBUG):
 
 $(BIN_DIR_RELEASE):
 	@$(MKDIR) $(BIN_DIR_RELEASE)
+
+-include $(MY_DEP_DEBUG) $(MY_DEP_RELEASE)
 
 clean:
 	@$(RM) obj

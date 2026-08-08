@@ -1,7 +1,7 @@
 #pragma once
 
+#include <array>
 #include "common.h"
-#include <map>
 
 enum class CartridgeType : u8
 {
@@ -35,32 +35,51 @@ enum class CartridgeType : u8
     HuC1_RAM_BATTERY = 0x00FF,
 };
 
-static const std::map<CartridgeType, const char *> cartridgeTypeNames = {
-    {CartridgeType::ROM_ONLY, "ROM ONLY\0"},
-    {CartridgeType::MBC1, "MBC1\0"},
-    {CartridgeType::MBC1_RAM, "MBC1 + RAM\0"},
-    {CartridgeType::MBC1_RAM_BATTERY, "MBC1 + RAM + BATTERY\0"},
-    {CartridgeType::MBC2, "MBC2\0"},
-    {CartridgeType::MBC2_BATTERY, "MBC2 + BATTERY\0"},
-    {CartridgeType::ROM_RAM_9, "ROM + RAM 9\0"},
-    {CartridgeType::ROM_RAM_BATTERY_9, "ROM + RAM + BATTERY 9\0"},
-    {CartridgeType::MMM01, "MMM01\0"},
-    {CartridgeType::MMM01_RAM, "MMM01 + RAM\0"},
-    {CartridgeType::MMM01_RAM_BATTERY, "MMM01 + RAM + BATTERY\0"},
-    {CartridgeType::MBC3_TIMER_BATTERY, "MBC3 + TIMER + BATTERY\0"},
-    {CartridgeType::MBC3_TIMER_RAM_BATTERY_10, "MBC3 + TIMER + RAM + BATTERY 10\0"},
-    {CartridgeType::MBC3, "MBC3\0"},
-    {CartridgeType::MBC3_RAM_10, "MBC3 + RAM 10\0"},
-    {CartridgeType::MBC3_RAM_BATTERY_10, "MBC3 + RAM + BATTERY 10\0"},
-    {CartridgeType::MBC5, "MBC5\0"},
-    {CartridgeType::MBC5_RAM, "MBC5 + RAM\0"},
-    {CartridgeType::MBC5_RAM_BATTERY, "MBC5 + RAM + BATTERY\0"},
-    {CartridgeType::MBC5_RUMBLE, "MBC5 + RUMBLE\0"},
-    {CartridgeType::MBC5_RUMBLE_RAM, "MBC5 + RUMBLE + RAM\0"},
-    {CartridgeType::MBC5_RUMBLE_RAM_BATTERY, "MBC5 + RUMBLE + RAM + BATTERY\0"},
-    {CartridgeType::MBC6, "MBC6\0"},
-    {CartridgeType::MBC7_SENSOR_RUMBLE_RAM_BATTERY, "MBC7 + SENSOR + RUMBLE + RAM + BATTERY\0"},
-    {CartridgeType::POCKET_CAMERA, "POCKET CAMERA\0"},
-    {CartridgeType::BANDAI_TAMA5, "BANDAI TAMA5\0"},
-    {CartridgeType::HuC3, "HuC3\0"},
-    {CartridgeType::HuC1_RAM_BATTERY, "HuC1 + RAM + BATTERY\0"}};
+struct CartridgeTypeName
+{
+    CartridgeType type;
+    const char *name;
+};
+
+constexpr std::array<CartridgeTypeName, 28> cartridgeTypeNames = {{
+    {CartridgeType::ROM_ONLY, "ROM ONLY"},
+    {CartridgeType::MBC1, "MBC1"},
+    {CartridgeType::MBC1_RAM, "MBC1 + RAM"},
+    {CartridgeType::MBC1_RAM_BATTERY, "MBC1 + RAM + BATTERY"},
+    {CartridgeType::MBC2, "MBC2"},
+    {CartridgeType::MBC2_BATTERY, "MBC2 + BATTERY"},
+    {CartridgeType::ROM_RAM_9, "ROM + RAM 9"},
+    {CartridgeType::ROM_RAM_BATTERY_9, "ROM + RAM + BATTERY 9"},
+    {CartridgeType::MMM01, "MMM01"},
+    {CartridgeType::MMM01_RAM, "MMM01 + RAM"},
+    {CartridgeType::MMM01_RAM_BATTERY, "MMM01 + RAM + BATTERY"},
+    {CartridgeType::MBC3_TIMER_BATTERY, "MBC3 + TIMER + BATTERY"},
+    {CartridgeType::MBC3_TIMER_RAM_BATTERY_10, "MBC3 + TIMER + RAM + BATTERY 10"},
+    {CartridgeType::MBC3, "MBC3"},
+    {CartridgeType::MBC3_RAM_10, "MBC3 + RAM 10"},
+    {CartridgeType::MBC3_RAM_BATTERY_10, "MBC3 + RAM + BATTERY 10"},
+    {CartridgeType::MBC5, "MBC5"},
+    {CartridgeType::MBC5_RAM, "MBC5 + RAM"},
+    {CartridgeType::MBC5_RAM_BATTERY, "MBC5 + RAM + BATTERY"},
+    {CartridgeType::MBC5_RUMBLE, "MBC5 + RUMBLE"},
+    {CartridgeType::MBC5_RUMBLE_RAM, "MBC5 + RUMBLE + RAM"},
+    {CartridgeType::MBC5_RUMBLE_RAM_BATTERY, "MBC5 + RUMBLE + RAM + BATTERY"},
+    {CartridgeType::MBC6, "MBC6"},
+    {CartridgeType::MBC7_SENSOR_RUMBLE_RAM_BATTERY, "MBC7 + SENSOR + RUMBLE + RAM + BATTERY"},
+    {CartridgeType::POCKET_CAMERA, "POCKET CAMERA"},
+    {CartridgeType::BANDAI_TAMA5, "BANDAI TAMA5"},
+    {CartridgeType::HuC3, "HuC3"},
+    {CartridgeType::HuC1_RAM_BATTERY, "HuC1 + RAM + BATTERY"},
+}};
+
+constexpr const char *getCartridgeTypeName(CartridgeType type)
+{
+    for (const auto &entry : cartridgeTypeNames)
+    {
+        if (entry.type == type)
+        {
+            return entry.name;
+        }
+    }
+    return "Unknown";
+}

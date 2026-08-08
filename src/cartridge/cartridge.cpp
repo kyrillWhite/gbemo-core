@@ -1,23 +1,11 @@
-#include <filesystem>
+#include <cstdio>
 #include "cartridge/cartridge.h"
 
 Cartridge::Cartridge() : romSize(0),
-                         romData(nullptr),
+                         romData{},
                          memory(nullptr),
                          header(nullptr)
 {
-}
-
-Cartridge::~Cartridge()
-{
-    if (memory != nullptr)
-    {
-        delete memory;
-    }
-    if (romData != nullptr)
-    {
-        delete[] romData;
-    }
 }
 
 int Cartridge::validateChecksum()
@@ -42,24 +30,12 @@ int Cartridge::validateChecksum()
 
 void Cartridge::printHeaderInfo(const char *filename)
 {
-    auto cartridgeTypeName = cartridgeTypeNames.at(header->cartridgeType);
-    std::string keyStr(header->licenseeCode, 2);
-    const char *licenseeName;
-    if (licenseeNames.contains(keyStr))
-    {
-        licenseeName = licenseeNames.at(keyStr);
-    }
-    else
-    {
-        licenseeName = "Unknown";
-    }
-
     printf("ROM \"%s\" info\n", filename);
     printf("\tTitle                 %40.*s\n", 15, header->title);
     printf("\tGameBoy Color support %40s\n", header->cgbFlag ? "true" : "false");
-    printf("\tLicensee              %40s\n", licenseeName);
+    printf("\tLicensee              %40s\n", getLicenseeName(header->licenseeCode));
     printf("\tSuper GameBoy support %40s\n", header->sgbFlag ? "true" : "false");
-    printf("\tCartidge type         %40s\n", cartridgeTypeName);
+    printf("\tCartidge type         %40s\n", getCartridgeTypeName(header->cartridgeType));
     printf("\tROM size              %#37d KB\n", 32 << header->romSize);
     printf("\tRAM size              %#37d KB\n", getRamSize(header->ramSize) >> 10);
     printf("\tDestination           %40s\n", header->destinationCode ? "USA, Europe" : "Japan");
@@ -78,14 +54,19 @@ int Cartridge::readRomFile(const char *filename)
         return -1;
     }
     fseek(filp, 0, SEEK_END);
-    romSize = ftell(filp);
-    romData = new u8[romSize];
+
+    romSize = static_cast<u32>(ftell(filp));
+    if (romSize > MAX_ROM_SIZE)
+    {
+        printf("ROM is %u KiB, only the first %u KiB are kept\n\n", romSize / KIB, MAX_ROM_SIZE / KIB);
+        romSize = MAX_ROM_SIZE;
+    }
     rewind(filp);
 
-    fread(romData, sizeof(u8), romSize, filp);
+    fread(romData.data(), sizeof(u8), romSize, filp);
     fclose(filp);
 
-    header = (CartridgeHeader *)(romData + 0x0100);
+    header = reinterpret_cast<const CartridgeHeader *>(romData.data() + 0x0100);
     printHeaderInfo(filename);
 
     if (validateChecksum())
@@ -102,56 +83,46 @@ int Cartridge::readRomFile(const char *filename)
 
 int Cartridge::initMemory(const char *filename)
 {
-    BatteryRam *battery = nullptr;
-    u32 ramSize = getRamSize(header->ramSize);
+    const u32 ramSize = getRamSize(header->ramSize);
 
     switch (header->cartridgeType)
     {
     case CartridgeType::ROM_ONLY:
-        memory = new RomOnly(romSize, romData);
+        memory = &memoryStorage.emplace<RomOnly>(romSize, romData.data());
         break;
     case CartridgeType::MBC1:
-        memory = new MBC1(romSize, romData);
+        memory = &memoryStorage.emplace<MBC1>(romSize, romData.data());
         break;
     case CartridgeType::MBC1_RAM:
-        memory = new MBC1(romSize, romData, ramSize);
+        memory = &memoryStorage.emplace<MBC1>(romSize, romData.data(), ramSize);
         break;
     case CartridgeType::MBC1_RAM_BATTERY:
-        battery = new BatteryRam(getSaveFilename(filename));
-        memory = new MBC1(romSize, romData, ramSize, battery);
+        battery.emplace(filename);
+        memory = &memoryStorage.emplace<MBC1>(romSize, romData.data(), ramSize, &battery.value());
         break;
     case CartridgeType::MBC2:
-        memory = new MBC2(romSize, romData);
+        memory = &memoryStorage.emplace<MBC2>(romSize, romData.data());
         break;
     case CartridgeType::MBC2_BATTERY:
-        battery = new BatteryRam(getSaveFilename(filename));
-        memory = new MBC2(romSize, romData, battery);
+        battery.emplace(filename);
+        memory = &memoryStorage.emplace<MBC2>(romSize, romData.data(), &battery.value());
         break;
     case CartridgeType::MBC3:
-        memory = new MBC1(romSize, romData);
+        memory = &memoryStorage.emplace<MBC1>(romSize, romData.data());
         break;
     case CartridgeType::MBC3_RAM_10:
-        memory = new MBC1(romSize, romData, ramSize);
+        memory = &memoryStorage.emplace<MBC1>(romSize, romData.data(), ramSize);
         break;
     case CartridgeType::MBC3_RAM_BATTERY_10:
-        battery = new BatteryRam(getSaveFilename(filename));
-        memory = new MBC1(romSize, romData, ramSize, battery);
+        battery.emplace(filename);
+        memory = &memoryStorage.emplace<MBC1>(romSize, romData.data(), ramSize, &battery.value());
         break;
     default:
-        auto cartridgeTypeName = cartridgeTypeNames.at(header->cartridgeType);
-        printf("Cartridge with type \"%s\" is not supported\n\n", cartridgeTypeName);
+        printf("Cartridge with type \"%s\" is not supported\n\n", getCartridgeTypeName(header->cartridgeType));
         return -1;
     }
 
     return 0;
-}
-
-const char *Cartridge::getSaveFilename(const char *filename)
-{
-    thread_local std::string buf;
-    std::filesystem::path p(filename);
-    buf = p.stem().string() + ".sav";
-    return buf.c_str();
 }
 
 u32 Cartridge::getRamSize(u8 type)

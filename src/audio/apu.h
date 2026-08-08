@@ -15,10 +15,10 @@ private:
     double leftCapacitor;
     double rightCapacitor;
 
-    PulseChannel *ch1;
-    PulseChannel *ch2;
-    WaveChannel *ch3;
-    NoiseChannel *ch4;
+    PulseChannel ch1;
+    PulseChannel ch2;
+    WaveChannel ch3;
+    NoiseChannel ch4;
 
     double leftHighPass(double in, bool dacsEnabled);
     double rightHighPass(double in, bool dacsEnabled);

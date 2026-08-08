@@ -1,31 +1,17 @@
+#include <algorithm>
 #include "cartridge/mbc2.h"
 
-MBC2::MBC2(u32 _romSize, u8 *_romData, BatteryRam *_battery) : CartridgeMemory(_romSize, _romData),
-                                                               ramEnable(false),
-                                                               romBank(1),
-                                                               battery(_battery)
+MBC2::MBC2(u32 _romSize, const u8 *_romData, BatteryRam *_battery) : CartridgeMemory(std::min(_romSize, MBC2_MAX_ROM_SIZE), _romData),
+                                                                     ramData{},
+                                                                     ramEnable(false),
+                                                                     romBank(1),
+                                                                     battery(_battery)
 {
-    ramData = new u8[RAM_SIZE];
-    if (battery && battery->saveExists())
+    ramData.fill(0x0F);
+    if (battery && battery->isSaveExist())
     {
-        battery->load(ramData, RAM_SIZE);
+        battery->load(ramData.data(), MBC2_MAX_RAM_SIZE);
     }
-    else
-    {
-        for (int i = 0; i < RAM_SIZE; i++)
-        {
-            ramData[i] = 0x0F;
-        }
-    }
-}
-
-MBC2::~MBC2()
-{
-    if (battery)
-    {
-        delete battery;
-    }
-    delete[] ramData;
 }
 
 u8 MBC2::read(u16 address)
@@ -33,7 +19,7 @@ u8 MBC2::read(u16 address)
     // cartridge static rom
     if (address <= 0x3FFF)
     {
-        return romData[address];
+        return readRom(address);
     }
     // cartridge switch rom
     else if (address <= 0x7FFF)
@@ -42,7 +28,7 @@ u8 MBC2::read(u16 address)
         if (bank == 0)
             bank = 1;
         u32 base = bank * 0x4000;
-        return romData[base + (address - 0x4000)];
+        return readRom(base + (address - 0x4000));
     }
     // built-in RAM
     else if (address >= 0xA000 && address <= 0xA1FF)
@@ -91,7 +77,7 @@ void MBC2::write(u16 address, u8 value)
         ramData[offs] = value & 0x0F;
         if (battery)
         {
-            battery->save(ramData, RAM_SIZE);
+            battery->save(ramData.data(), MBC2_MAX_RAM_SIZE);
         }
     }
     else if (address >= 0xA200 && address <= 0xBFFF)
@@ -102,7 +88,7 @@ void MBC2::write(u16 address, u8 value)
         ramData[offs] = value & 0x0F;
         if (battery)
         {
-            battery->save(ramData, RAM_SIZE);
+            battery->save(ramData.data(), MBC2_MAX_RAM_SIZE);
         }
     }
 }
