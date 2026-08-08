@@ -10,18 +10,19 @@
 
 Emu::Emu(bool skipBoot)
 {
-    apu = new APU();
-    interrupts = new Interrupts();
-    timer = new Timer(interrupts, apu, skipBoot);
     cartridge = new Cartridge();
+    interrupts = new Interrupts();
     bus = new Bus();
+    apu = new APU();
     dma = new DMA();
+    joypad = new Joypad();
+    clock = new SystemClock();
+
+    timer = new Timer(interrupts, apu, skipBoot);
     lcd = new LCD(dma, skipBoot);
     ppu = new PPU(lcd, skipBoot);
-    dma->setPPU(ppu);
     ppuSm = new PpuStateMachine(lcd, ppu, interrupts);
-    ppu->setStateMachine(ppuSm);
-    joypad = new Joypad();
+
     memory = new Memory(
         bus->getAddressBus(),
         cartridge,
@@ -33,29 +34,32 @@ Emu::Emu(bool skipBoot)
         joypad,
         apu,
         skipBoot);
-    dma->setMemory(memory);
-    bus->setMemory(memory);
+
     core = new Core(bus, interrupts, skipBoot);
     dbgReader = new DbgReader(memory);
-    clock = new SystemClock();
+
+    dma->setPPU(ppu);
+    ppu->setStateMachine(ppuSm);
+    dma->setMemory(memory);
+    bus->setMemory(memory);
 }
 
 Emu::~Emu()
 {
-    delete interrupts;
-    delete timer;
-    delete cartridge;
-    delete bus;
-    delete memory;
-    delete core;
     delete dbgReader;
-    delete clock;
-    delete lcd;
-    delete ppu;
+    delete core;
+    delete memory;
     delete ppuSm;
-    delete dma;
+    delete ppu;
+    delete lcd;
+    delete timer;
+    delete clock;
     delete joypad;
+    delete dma;
     delete apu;
+    delete bus;
+    delete interrupts;
+    delete cartridge;
 }
 
 int Emu::loadRom(const char *romFilename)

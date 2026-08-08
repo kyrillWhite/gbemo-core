@@ -4,23 +4,16 @@ MemoryIO::MemoryIO(
     Interrupts *_interrupts,
     Timer *_timer,
     LCD *_lcd,
-    Joypad *_joypad,
-    APU *_apu) : interrupts(_interrupts),
-                 timer(_timer),
-                 booted(false),
-                 serial(new u8[2]),
-                 joypad(_joypad),
-                 lcd(_lcd),
-                 apu(_apu)
+    APU *_apu,
+    Joypad *_joypad) : interrupts(_interrupts),
+                       timer(_timer),
+                       booted(false),
+                       joypad(_joypad),
+                       lcd(_lcd),
+                       apu(_apu)
 {
     serial[0] = 0x00;
     serial[1] = 0x7E;
-}
-
-MemoryIO::~MemoryIO()
-{
-    // lcd, interrupts, timer, joypad and apu are owned by Emu, not by us.
-    delete[] serial;
 }
 
 bool MemoryIO::isBooted()

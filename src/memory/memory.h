@@ -13,15 +13,15 @@ class Memory
 private:
     AddressBus *addressBus;
     Cartridge *cartridge;
-    MemoryIO *memoryIO;
+    MemoryIO memoryIO;
     Interrupts *interrupts;
     LCD *lcd;
     PPU *ppu;
     DMA *dma;
 
-    u8 *wram0; // 4096 (4Kb)
-    u8 *wramN; // 4096 (4Kb)
-    u8 *hram;  // 128
+    u8 wram0[4096];
+    u8 wramN[4096];
+    u8 hram[128];
 
 public:
     Memory(
@@ -35,7 +35,6 @@ public:
         Joypad *_joypad,
         APU *_apu,
         bool skipBoot = false);
-    ~Memory();
 
     u8 read();
     void write(u8 value);

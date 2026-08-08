@@ -6,12 +6,11 @@
 class LCD
 {
 private:
-    LcdRegisters *registers;
+    LcdRegisters registers;
     DMA *dma;
 
 public:
     LCD(DMA *_dma, bool skipBoot = false);
-    ~LCD();
 
     u16 read(u16 address);
     void write(u16 address, u8 value);

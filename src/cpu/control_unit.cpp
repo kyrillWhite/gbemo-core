@@ -88,7 +88,7 @@ void ControlUnit::printInstruction(Opcode opcode, bool fixCB)
         printf("Tick: %10I64u; %04X: %40s A: %02X F: %s%s%s%s BC: %04X DE: %04X HL: %04X\n",
                globalTicks,
                fixCB ? currentPC - 2 : currentPC - 1,
-               getOpcodeName(opcode).c_str(),
+               getOpcodeName(opcode),
                rf->getA(),
                rf->getZflag() ? "Z" : "-",
                rf->getNflag() ? "N" : "-",

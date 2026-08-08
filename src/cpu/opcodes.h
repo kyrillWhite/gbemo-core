@@ -1,7 +1,6 @@
 #pragma once
 
 #include "common.h"
-#include <string>
 
 /*
     [+] 8-bit load instructions
@@ -138,7 +137,7 @@ enum Opcode
 };
 
 #ifdef DEBUG
-static std::string getOpcodeName(const Opcode value)
+static const char *getOpcodeName(const Opcode value)
 {
 #define PROCESS_VAL(p) \
     case (p):          \

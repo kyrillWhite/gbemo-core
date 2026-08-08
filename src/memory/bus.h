@@ -6,12 +6,11 @@
 class Bus
 {
 private:
-    AddressBus *addrBus;
-    DataBus *dataBus;
+    AddressBus addrBus;
+    DataBus dataBus;
 
 public:
     Bus();
-    ~Bus();
 
     void setAddress(u16 address);
     u8 readMemory();

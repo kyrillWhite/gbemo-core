@@ -41,6 +41,9 @@ public:
     Emu(bool skipBoot = false);
     ~Emu();
 
+    Emu(const Emu &) = delete;
+    Emu &operator=(const Emu &) = delete;
+
     int loadRom(const char *romFilename);
     bool tick();
 

@@ -1,37 +1,31 @@
 #include "memory/bus.h"
 
-Bus::Bus() : addrBus(new AddressBus()),
-             dataBus(new DataBus())
+Bus::Bus() : addrBus(),
+             dataBus()
 {
 }
 
 u8 Bus::readMemory()
 {
-    return dataBus->readMemory();
+    return dataBus.readMemory();
 }
 
 void Bus::writeMemory(u8 data)
 {
-    dataBus->writeMemory(data);
+    dataBus.writeMemory(data);
 }
 
 void Bus::setMemory(Memory *memory)
 {
-    dataBus->setMemory(memory);
+    dataBus.setMemory(memory);
 }
 
 AddressBus *Bus::getAddressBus()
 {
-    return addrBus;
-}
-
-Bus::~Bus()
-{
-    delete addrBus;
-    delete dataBus;
+    return &addrBus;
 }
 
 void Bus::setAddress(u16 address)
 {
-    addrBus->setAddress(address);
+    addrBus.setAddress(address);
 }

@@ -2,17 +2,11 @@
 #include <cstring>
 
 PPU::PPU(LCD *_lcd, bool skipBoot) : lcd(_lcd),
-                                     fifo(new FIFO()),
-                                     vram(new u8[8192]),
-                                     oam(new OAMEntry[40]),
                                      currentFrame(0),
                                      lineTicks(0),
-                                     videoBuffer(new u8[YRES * XRES]),
                                      lineSpriteCount(0),
                                      lineSprites(nullptr),
                                      fetchedEntryCount(0),
-                                     lineEntryArray(new OAMLineEntry[10]),
-                                     fetchedEntries(new OAMEntry[3]),
                                      windowLine(0)
 {
     lcd->modeSet(OAM);
@@ -23,16 +17,6 @@ PPU::PPU(LCD *_lcd, bool skipBoot) : lcd(_lcd),
     {
         memset(oam, 0, sizeof(OAMEntry) * 40);
     }
-}
-
-PPU::~PPU()
-{
-    delete fifo;
-    delete[] oam;
-    delete[] vram;
-    delete[] videoBuffer;
-    delete[] fetchedEntries;
-    delete[] lineEntryArray;
 }
 
 void PPU::setStateMachine(PpuStateMachine *_ppuSm)
@@ -67,66 +51,6 @@ bool PPU::windowVisible()
            lcd->getRegisters()->windowX <= 166 && lcd->getRegisters()->windowY >= 0 &&
            lcd->getRegisters()->windowY < YRES;
 }
-
-// void PPU::loadLineSpites()
-//{
-//     lineSpriteCount = 0;
-//     lineSprites = nullptr;
-//
-//     int curY = lcd->getRegisters()->ly;
-//
-//     u8 sprite_height = lcd->objSize();
-//     memset(lineEntryArray, 0, 10 * sizeof(OAMLineEntry));
-//
-//     for (int i = 0; i < 40; i++) {
-//         OAMEntry e = oam[i];
-//
-//         if (!e.xPos) {
-//             continue;
-//         }
-//
-//         if (lineSpriteCount >= 10) {
-//             break;
-//         }
-//
-//         if (e.yPos <= curY + 16 && e.yPos + sprite_height > curY + 16) {
-//             OAMLineEntry* entry = &lineEntryArray[
-//                 lineSpriteCount++
-//             ];
-//
-//             entry->oam = e;
-//             entry->next = nullptr;
-//
-//             if (!lineSprites ||
-//                 lineSprites->oam.xPos > e.xPos) {
-//                 entry->next = lineSprites;
-//                 lineSprites = entry;
-//                 continue;
-//             }
-//
-//             //do some sorting...
-//
-//             OAMLineEntry* le = lineSprites;
-//             OAMLineEntry* prev = le;
-//
-//             while (le) {
-//                 if (le->oam.xPos > e.xPos) {
-//                     prev->next = entry;
-//                     entry->next = le;
-//                     break;
-//                 }
-//
-//                 if (!le->next) {
-//                     le->next = entry;
-//                     break;
-//                 }
-//
-//                 prev = le;
-//                 le = le->next;
-//             }
-//         }
-//     }
-// }
 
 void PPU::loadLineSpites()
 {
@@ -181,10 +105,6 @@ void PPU::loadLineSpites()
 
 u8 PPU::oamRead(u16 address, bool inner)
 {
-    // if (!inner && (lcd->mode() == XFER || lcd->mode() == OAM)) {
-    //     return 0xFF;
-    // }
-
     if (address >= 0xFE00)
     {
         address -= 0xFE00;
@@ -196,10 +116,6 @@ u8 PPU::oamRead(u16 address, bool inner)
 
 void PPU::oamWrite(u16 address, u8 value, bool inner)
 {
-    // if (!inner && (lcd->mode() == XFER || lcd->mode() == OAM)) {
-    //     return;
-    // }
-
     if (address >= 0xFE00)
     {
         address -= 0xFE00;
@@ -211,17 +127,11 @@ void PPU::oamWrite(u16 address, u8 value, bool inner)
 
 u8 PPU::vramRead(u16 address, bool inner)
 {
-    // if (!inner && lcd->mode() == XFER) {
-    //     return 0xFF;
-    // }
     return vram[address - 0x8000];
 }
 
 void PPU::vramWrite(u16 address, u8 value, bool inner)
 {
-    // if (!inner && lcd->mode() == XFER) {
-    //     return;
-    // }
     vram[address - 0x8000] = value;
 }
 
@@ -247,7 +157,7 @@ void PPU::setCurrentFrame(u32 value)
 
 FIFO *PPU::getFIFO()
 {
-    return fifo;
+    return &fifo;
 }
 
 u8 PPU::fetchSpritePixels(int bit, u8 color, u8 bgColor)
@@ -257,12 +167,12 @@ u8 PPU::fetchSpritePixels(int bit, u8 color, u8 bgColor)
         int spX = (fetchedEntries[i].xPos - 8) +
                   ((lcd->getRegisters()->scrollX % 8));
 
-        if (spX + 8 < fifo->fifoX)
+        if (spX + 8 < fifo.fifoX)
         {
             continue;
         }
 
-        int offset = fifo->fifoX - spX;
+        int offset = fifo.fifoX - spX;
 
         if (offset < 0 || offset > 7)
         {
@@ -276,8 +186,8 @@ u8 PPU::fetchSpritePixels(int bit, u8 color, u8 bgColor)
             bit = offset;
         }
 
-        u8 hi = !!(fifo->fetchEntryData[i * 2] & (1 << bit));
-        u8 lo = !!(fifo->fetchEntryData[(i * 2) + 1] & (1 << bit)) << 1;
+        u8 hi = !!(fifo.fetchEntryData[i * 2] & (1 << bit));
+        u8 lo = !!(fifo.fetchEntryData[(i * 2) + 1] & (1 << bit)) << 1;
 
         bool bgPriority = fetchedEntries[i].priority;
 
@@ -300,7 +210,7 @@ u8 PPU::fetchSpritePixels(int bit, u8 color, u8 bgColor)
     return color;
 }
 
-void PPU::pipilineLoadWindowTile()
+void PPU::pipelineLoadWindowTile()
 {
     if (!windowVisible())
     {
@@ -309,21 +219,21 @@ void PPU::pipilineLoadWindowTile()
 
     u8 window_y = lcd->getRegisters()->windowY;
 
-    if (fifo->fetchX + 7 >= lcd->getRegisters()->windowX &&
-        fifo->fetchX + 7 < lcd->getRegisters()->windowX + YRES + 14)
+    if (fifo.fetchX + 7 >= lcd->getRegisters()->windowX &&
+        fifo.fetchX + 7 < lcd->getRegisters()->windowX + YRES + 14)
     {
         if (lcd->getRegisters()->ly >= window_y && lcd->getRegisters()->ly < window_y + XRES)
         {
             u8 w_tile_y = windowLine / 8;
 
-            fifo->bgwFetchData[0] = vramRead(lcd->winTileMapArea() +
-                                                 ((fifo->fetchX + 7 - lcd->getRegisters()->windowX) / 8) +
-                                                 (w_tile_y * 32),
-                                             true);
+            fifo.bgwFetchData[0] = vramRead(lcd->winTileMapArea() +
+                                                ((fifo.fetchX + 7 - lcd->getRegisters()->windowX) / 8) +
+                                                (w_tile_y * 32),
+                                            true);
 
             if (lcd->bgAndWinTileDataArea() == 0x8800)
             {
-                fifo->bgwFetchData[0] += 128;
+                fifo.bgwFetchData[0] += 128;
             }
         }
     }
@@ -350,7 +260,7 @@ void PPU::pipelineLoadSpriteData(u8 offset)
             tile_index &= ~(1);
         }
 
-        fifo->fetchEntryData[(i * 2) + offset] =
+        fifo.fetchEntryData[(i * 2) + offset] =
             vramRead(0x8000 + (tile_index * 16) + ty + offset, true);
     }
 }
@@ -363,8 +273,8 @@ void PPU::pipelineLoadSpriteTile()
     {
         int spX = (le->oam.xPos - 8) + (lcd->getRegisters()->scrollX % 8);
 
-        if ((spX >= fifo->fetchX && spX < fifo->fetchX + 8) ||
-            ((spX + 8) >= fifo->fetchX && (spX + 8) < fifo->fetchX + 8))
+        if ((spX >= fifo.fetchX && spX < fifo.fetchX + 8) ||
+            ((spX + 8) >= fifo.fetchX && (spX + 8) < fifo.fetchX + 8))
         {
             fetchedEntries[fetchedEntryCount++] = le->oam;
         }
@@ -380,7 +290,7 @@ void PPU::pipelineLoadSpriteTile()
 
 void PPU::pipelineFetch()
 {
-    switch (fifo->fetchState)
+    switch (fifo.fetchState)
     {
     case FS_TILE:
     {
@@ -388,17 +298,17 @@ void PPU::pipelineFetch()
 
         if (lcd->bgwEnable())
         {
-            fifo->bgwFetchData[0] = vramRead(lcd->bgTileMapArea() +
-                                                 (fifo->mapX / 8) +
-                                                 (((fifo->mapY / 8)) * 32),
-                                             true);
+            fifo.bgwFetchData[0] = vramRead(lcd->bgTileMapArea() +
+                                                (fifo.mapX / 8) +
+                                                (((fifo.mapY / 8)) * 32),
+                                            true);
 
             if (lcd->bgAndWinTileDataArea() == 0x8800)
             {
-                fifo->bgwFetchData[0] += 128;
+                fifo.bgwFetchData[0] += 128;
             }
 
-            pipilineLoadWindowTile();
+            pipelineLoadWindowTile();
         }
 
         if (lcd->objEnable() && lineSprites)
@@ -406,38 +316,38 @@ void PPU::pipelineFetch()
             pipelineLoadSpriteTile();
         }
 
-        fifo->fetchState = FS_DATA0;
-        fifo->fetchX += 8;
+        fifo.fetchState = FS_DATA0;
+        fifo.fetchX += 8;
     }
     break;
 
     case FS_DATA0:
     {
-        fifo->bgwFetchData[1] = vramRead(lcd->bgAndWinTileDataArea() +
-                                             (fifo->bgwFetchData[0] * 16) + fifo->tileY,
-                                         true);
+        fifo.bgwFetchData[1] = vramRead(lcd->bgAndWinTileDataArea() +
+                                            (fifo.bgwFetchData[0] * 16) + fifo.tileY,
+                                        true);
 
         pipelineLoadSpriteData(0);
 
-        fifo->fetchState = FS_DATA1;
+        fifo.fetchState = FS_DATA1;
     }
     break;
 
     case FS_DATA1:
     {
-        fifo->bgwFetchData[2] = vramRead(lcd->bgAndWinTileDataArea() +
-                                             (fifo->bgwFetchData[0] * 16) + fifo->tileY + 1,
-                                         true);
+        fifo.bgwFetchData[2] = vramRead(lcd->bgAndWinTileDataArea() +
+                                            (fifo.bgwFetchData[0] * 16) + fifo.tileY + 1,
+                                        true);
 
         pipelineLoadSpriteData(1);
 
-        fifo->fetchState = FS_SLEEP;
+        fifo.fetchState = FS_SLEEP;
     }
     break;
 
     case FS_SLEEP:
     {
-        fifo->fetchState = FS_PUSH;
+        fifo.fetchState = FS_PUSH;
     }
     break;
 
@@ -445,7 +355,7 @@ void PPU::pipelineFetch()
     {
         if (pipelineFifoAdd())
         {
-            fifo->fetchState = FS_TILE;
+            fifo.fetchState = FS_TILE;
         }
     }
     break;
@@ -454,25 +364,25 @@ void PPU::pipelineFetch()
 
 void PPU::pipelinePushPixel()
 {
-    if (fifo->size > 8)
+    if (fifo.size > 8)
     {
-        u8 pixel = fifo->pop();
+        u8 pixel = fifo.pop();
 
-        if (fifo->lineX >= lcd->getRegisters()->scrollX % 8)
+        if (fifo.lineX >= lcd->getRegisters()->scrollX % 8)
         {
-            videoBuffer[fifo->pushedX + lcd->getRegisters()->ly * XRES] = pixel;
-            fifo->pushedX++;
+            videoBuffer[fifo.pushedX + lcd->getRegisters()->ly * XRES] = pixel;
+            fifo.pushedX++;
         }
 
-        fifo->lineX++;
+        fifo.lineX++;
     }
 }
 
 void PPU::pipelineProcess()
 {
-    fifo->mapY = lcd->getRegisters()->ly + lcd->getRegisters()->scrollY;
-    fifo->mapX = fifo->fetchX + lcd->getRegisters()->scrollX;
-    fifo->tileY = ((lcd->getRegisters()->ly + lcd->getRegisters()->scrollY) % 8) * 2;
+    fifo.mapY = lcd->getRegisters()->ly + lcd->getRegisters()->scrollY;
+    fifo.mapX = fifo.fetchX + lcd->getRegisters()->scrollX;
+    fifo.tileY = ((lcd->getRegisters()->ly + lcd->getRegisters()->scrollY) % 8) * 2;
 
     if (!(lineTicks & 1))
     {
@@ -484,18 +394,18 @@ void PPU::pipelineProcess()
 
 bool PPU::pipelineFifoAdd()
 {
-    if (fifo->size > 8)
+    if (fifo.size > 8)
     {
         return false;
     }
 
-    int x = fifo->fetchX - (8 - (lcd->getRegisters()->scrollX % 8));
+    int x = fifo.fetchX - (8 - (lcd->getRegisters()->scrollX % 8));
 
     for (int i = 0; i < 8; i++)
     {
         int bit = 7 - i;
-        u8 hi = !!(fifo->bgwFetchData[1] & (1 << bit));
-        u8 lo = !!(fifo->bgwFetchData[2] & (1 << bit)) << 1;
+        u8 hi = !!(fifo.bgwFetchData[1] & (1 << bit));
+        u8 lo = !!(fifo.bgwFetchData[2] & (1 << bit)) << 1;
         u8 color = lcd->getRegisters()->bgColors[hi | lo];
 
         if (!lcd->bgwEnable())
@@ -511,8 +421,8 @@ bool PPU::pipelineFifoAdd()
         // if ((x + i) >= 0) {
         if (x >= 0)
         {
-            fifo->push(color);
-            fifo->fifoX++;
+            fifo.push(color);
+            fifo.fifoX++;
         }
     }
 

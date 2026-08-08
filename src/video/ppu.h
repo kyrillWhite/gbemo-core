@@ -5,35 +5,34 @@
 #include "video/ppu_sm.h"
 #include "video/fifo.h"
 
-const int LINES_PER_FRAME = 154;
-const int TICKS_PER_LINE = 456;
-const int YRES = 144;
-const int XRES = 160;
+constexpr int LINES_PER_FRAME = 154;
+constexpr int TICKS_PER_LINE = 456;
+constexpr int YRES = 144;
+constexpr int XRES = 160;
 
 class PPU
 {
 private:
     LCD *lcd;
     PpuStateMachine *ppuSm;
-    FIFO *fifo;
+    FIFO fifo;
 
-    OAMEntry *oam; // 160 temp - move to ppu
-    u8 *vram;      // 8192 (8Kb)
+    OAMEntry oam[40]; // TODO: move to ppu
+    u8 vram[8192];
 
     u32 currentFrame;
     u32 lineTicks;
-    u8 *videoBuffer;
+    u8 videoBuffer[YRES * XRES];
 
 public:
     PPU(LCD *_lcd, bool skipBoot);
-    ~PPU();
 
     u8 lineSpriteCount;
     OAMLineEntry *lineSprites;
 
     u8 fetchedEntryCount;
-    OAMEntry *fetchedEntries;
-    OAMLineEntry *lineEntryArray;
+    OAMEntry fetchedEntries[3];
+    OAMLineEntry lineEntryArray[10];
     u8 windowLine;
 
     void tick();
@@ -56,7 +55,7 @@ public:
     FIFO *getFIFO();
 
     u8 fetchSpritePixels(int bit, u8 color, u8 bgColor);
-    void pipilineLoadWindowTile();
+    void pipelineLoadWindowTile();
     void pipelineLoadSpriteData(u8 offset);
     void pipelineLoadSpriteTile();
     void pipelineFetch();

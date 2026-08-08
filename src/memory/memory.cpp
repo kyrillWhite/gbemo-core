@@ -14,27 +14,16 @@ Memory::Memory(
     APU *_apu,
     bool skipBoot) : addressBus(_addressBus),
                      cartridge(_cartridge),
-                     wram0(new u8[4096]),
-                     wramN(new u8[4096]),
-                     hram(new u8[128]),
                      interrupts(_interrupts),
                      lcd(_lcd),
                      ppu(_ppu),
-                     memoryIO(new MemoryIO(_interrupts, _timer, _lcd, _joypad, _apu)),
+                     memoryIO(_interrupts, _timer, _lcd, _apu, _joypad),
                      dma(_dma)
 {
     if (skipBoot)
     {
-        memoryIO->write(0xFF50, 1);
+        memoryIO.write(0xFF50, 1);
     }
-}
-
-Memory::~Memory()
-{
-    delete[] wram0;
-    delete[] wramN;
-    delete[] hram;
-    delete memoryIO;
 }
 
 u8 Memory::read()
@@ -51,7 +40,7 @@ void Memory::write(u8 value)
 
 u8 Memory::read(u16 address)
 {
-    if (!memoryIO->isBooted() && address <= 0x00FF)
+    if (!memoryIO.isBooted() && address <= 0x00FF)
     {
         return dmgBoot[address];
     }
@@ -108,7 +97,7 @@ u8 Memory::read(u16 address)
     // i/o registers
     else if (address <= 0xFF7F)
     {
-        return memoryIO->read(address);
+        return memoryIO.read(address);
     }
     // high ram
     else if (address <= 0xFFFE)
@@ -172,7 +161,7 @@ void Memory::write(u16 address, u8 value)
     // i/o registers
     else if (address <= 0xFF7F)
     {
-        memoryIO->write(address, value);
+        memoryIO.write(address, value);
     }
     // high ram
     else if (address <= 0xFFFE)

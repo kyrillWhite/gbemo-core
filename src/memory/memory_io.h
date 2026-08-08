@@ -13,7 +13,7 @@ private:
     APU *apu;
 
     bool booted;
-    u8 *serial;
+    u8 serial[2];
     Joypad *joypad;
 
 public:
@@ -21,9 +21,8 @@ public:
         Interrupts *_interrupts,
         Timer *_timer,
         LCD *_lcd,
-        Joypad *_joypad,
-        APU *_apu);
-    ~MemoryIO();
+        APU *_apu,
+        Joypad *_joypad);
 
     bool isBooted();
 
