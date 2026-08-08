@@ -1,8 +1,8 @@
 #include "video/fifo.h"
 
 FIFO::FIFO() : fetchState(FS_TILE),
-               head(nullptr),
-               tail(nullptr),
+               headIndex(0),
+               tailIndex(0),
                size(0),
                lineX(0),
                pushedX(0),
@@ -14,40 +14,30 @@ FIFO::FIFO() : fetchState(FS_TILE),
                tileY(0),
                fifoX(0)
 {
+    buffer.fill(0);
 }
 
 void FIFO::push(u8 value)
 {
-    FifoEntry *next = new FifoEntry();
-    next->next = nullptr;
-    next->pixel = value;
-
-    if (!head)
+    if (size >= FIFO_CAPACITY)
     {
-        head = next;
-        tail = next;
-    }
-    else
-    {
-        tail->next = next;
-        tail = next;
+        return;
     }
 
+    buffer[tailIndex] = value;
+    tailIndex = (tailIndex + 1) & FIFO_MASK;
     size++;
 }
 
 u8 FIFO::pop()
 {
-    if (size <= 0)
+    if (size == 0)
     {
         return 0;
     }
 
-    u8 value = head->pixel;
-    FifoEntry *popped = head;
-    head = head->next;
-
-    delete popped;
+    u8 value = buffer[headIndex];
+    headIndex = (headIndex + 1) & FIFO_MASK;
 
     size--;
     return value;
@@ -55,10 +45,7 @@ u8 FIFO::pop()
 
 void FIFO::reset()
 {
-    while (size)
-    {
-        pop();
-    }
-
-    head = nullptr;
+    headIndex = 0;
+    tailIndex = 0;
+    size = 0;
 }

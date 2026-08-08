@@ -1,19 +1,20 @@
 #pragma once
+#include <array>
 #include "cpu/fetch_state.h"
 
-struct FifoEntry
-{
-    FifoEntry *next;
-    u8 pixel;
-};
+constexpr size_t FIFO_CAPACITY = 32;
+constexpr size_t FIFO_MASK = FIFO_CAPACITY - 1;
 
 class FIFO
 {
+private:
+    std::array<u8, FIFO_CAPACITY> buffer;
+    size_t headIndex;
+    size_t tailIndex;
+
 public:
     FetchState fetchState;
 
-    FifoEntry *head;
-    FifoEntry *tail;
     u32 size;
 
     u8 lineX;
@@ -30,6 +31,5 @@ public:
 
     void push(u8 value);
     u8 pop();
-
     void reset();
 };
