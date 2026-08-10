@@ -6,6 +6,18 @@ ARCH ?= x64
 SHARED ?= 0
 VERSION ?= $(shell git describe --tags --always --dirty 2>/dev/null || echo dev)
 
+# Link-time optimization, on for the optimized modes. The core is a wall of
+# small calls across translation units — an LCD register getter, a FIFO push, a
+# bus read — every one of them on the per-T-cycle path, and none of them
+# inlinable while each .cpp is compiled on its own. LTO=0 builds the old way.
+LTO ?= 1
+ifeq ($(LTO),1)
+	# Fat objects on purpose: dist ships libgbemo.a, and an IR-only archive
+	# would link only against this exact GCC. This way the archive carries real
+	# code for everyone else and the IR for consumers that pass -flto too.
+	LTO_FLAGS := -flto=auto -ffat-lto-objects
+endif
+
 # "make x86 release": the selector words set variables and build nothing
 # themselves, so the real goal is built once rather than once per selector and
 # once more for the defaults.
@@ -24,7 +36,13 @@ endif
 MKDIR := mkdir -p
 RM := rm -rf
 CP := cp -f
-AR ?= ar
+# gcc-ar rather than ar: it loads GCC's LTO plugin, and without the plugin the
+# symbols an LTO object defines are invisible to the linker, so every link ends
+# in undefined references. It handles ordinary objects identically. "AR ?= ar"
+# would be a no-op here — make defines AR itself — hence the origin test.
+ifeq ($(origin AR),default)
+	AR := $(shell which gcc-ar 2>/dev/null || echo ar)
+endif
 ZIP ?= zip
 DLL := .dll
 
@@ -50,8 +68,14 @@ ifeq ($(ARCH),x86)
 			MINGW32 install at MINGW32_BIN (currently $(MINGW32_BIN)))
 	endif
 
-	# MSYS2 MINGW32 ships the cross-named g++ but not a cross-named ar.
-	ifneq ($(shell which i686-w64-mingw32-ar 2>/dev/null),)
+	# MSYS2 MINGW32 ships the cross-named g++ but not a cross-named ar. Plain
+	# ar is the last resort: it cannot read LTO objects, so a 32-bit build that
+	# falls through to it needs LTO=0.
+	ifneq ($(shell which i686-w64-mingw32-gcc-ar 2>/dev/null),)
+		AR := i686-w64-mingw32-gcc-ar
+	else ifneq ($(wildcard $(MINGW32_BIN)/gcc-ar.exe),)
+		AR := $(MINGW32_BIN)/gcc-ar.exe
+	else ifneq ($(shell which i686-w64-mingw32-ar 2>/dev/null),)
 		AR := i686-w64-mingw32-ar
 	else ifneq ($(wildcard $(MINGW32_BIN)/ar.exe),)
 		AR := $(MINGW32_BIN)/ar.exe
@@ -98,7 +122,8 @@ all: debug
 debug: CXXFLAGS := $(CXXFLAGS_BASE) -D_DEBUG -g
 debug: $(LIB_DEBUG) $(SHARED_DEBUG)
 
-release: CXXFLAGS := $(CXXFLAGS_BASE) -O3
+release: CXXFLAGS := $(CXXFLAGS_BASE) -O3 $(LTO_FLAGS)
+release: LDFLAGS := $(LDFLAGS) -O3 $(LTO_FLAGS)
 release: $(LIB_RELEASE) $(SHARED_RELEASE)
 
 # Static library
