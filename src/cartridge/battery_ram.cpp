@@ -27,6 +27,13 @@ BatteryRam::BatteryRam(const char *romFilename) : filename{}
 
     std::memcpy(filename.data(), stem, stemSize);
     std::memcpy(filename.data() + stemSize, SAVE_EXTENSION, sizeof(SAVE_EXTENSION));
+
+    fopen_s(&writeStream, filename.data(), "wb");
+}
+
+BatteryRam::~BatteryRam()
+{
+    fclose(writeStream);
 }
 
 bool BatteryRam::isSaveExist()
@@ -43,19 +50,18 @@ bool BatteryRam::isSaveExist()
 
 void BatteryRam::save(const u8 *ramData, u32 ramSize)
 {
-    FILE *filp;
-    fopen_s(&filp, filename.data(), "wb");
-    if (!filp)
+    if (!writeStream)
     {
         printf("Save error: cannot open \'%s\' for writing\n", filename.data());
         return;
     }
 
-    if (fwrite(ramData, sizeof(u8), ramSize, filp) != ramSize)
+    fseek(writeStream, 0, SEEK_SET);
+
+    if (fwrite(ramData, sizeof(u8), ramSize, writeStream) != ramSize)
     {
         printf("Save error: failed to write all SRAM to \'%s\'\n", filename.data());
     }
-    fclose(filp);
 }
 
 void BatteryRam::load(u8 *ramData, u32 ramSize)

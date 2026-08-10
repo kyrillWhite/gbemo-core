@@ -6,12 +6,15 @@
 class BatteryRam
 {
 private:
+    FILE *writeStream;
+
     static constexpr u32 MAX_FILENAME_SIZE = 260;
 
     std::array<char, MAX_FILENAME_SIZE> filename;
 
 public:
     BatteryRam(const char *romFilename);
+    ~BatteryRam();
 
     bool isSaveExist();
 
