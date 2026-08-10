@@ -28,61 +28,54 @@ BatteryRam::BatteryRam(const char *romFilename) : filename{}
     std::memcpy(filename.data(), stem, stemSize);
     std::memcpy(filename.data() + stemSize, SAVE_EXTENSION, sizeof(SAVE_EXTENSION));
 
-    if (fopen_s(&writeStream, filename.data(), "r+b") != 0 || !writeStream)
+    saveExists = fopen_s(&stream, filename.data(), "r+b") == 0 && stream;
+    if (!saveExists)
     {
-        fopen_s(&writeStream, filename.data(), "wb");
+        fopen_s(&stream, filename.data(), "wb");
     }
 }
 
 BatteryRam::~BatteryRam()
 {
-    if (writeStream)
+    if (stream)
     {
-        fclose(writeStream);
+        fclose(stream);
     }
 }
 
 bool BatteryRam::isSaveExist()
 {
-    FILE *filp;
-    fopen_s(&filp, filename.data(), "rb");
-    if (!filp)
-    {
-        return false;
-    }
-    fclose(filp);
-    return true;
+    return saveExists;
 }
 
 void BatteryRam::save(const u8 *ramData, u32 ramSize)
 {
-    if (!writeStream)
+    if (!stream)
     {
         printf("Save error: cannot open \'%s\' for writing\n", filename.data());
         return;
     }
 
-    fseek(writeStream, 0, SEEK_SET);
+    fseek(stream, 0, SEEK_SET);
 
-    if (fwrite(ramData, sizeof(u8), ramSize, writeStream) != ramSize)
+    if (fwrite(ramData, sizeof(u8), ramSize, stream) != ramSize)
     {
         printf("Save error: failed to write all SRAM to \'%s\'\n", filename.data());
     }
-    fflush(writeStream);
+    fflush(stream);
 }
 
 void BatteryRam::load(u8 *ramData, u32 ramSize)
 {
-    FILE *filp;
-    fopen_s(&filp, filename.data(), "rb");
-    if (!filp)
+    if (!stream)
     {
         return;
     }
 
-    if (fread(ramData, sizeof(u8), ramSize, filp) != ramSize)
+    fseek(stream, 0, SEEK_SET);
+
+    if (fread(ramData, sizeof(u8), ramSize, stream) != ramSize)
     {
         printf("Load warning: only partially read SRAM from \'%s\'\n", filename.data());
     }
-    fclose(filp);
 }

@@ -6,7 +6,8 @@
 class BatteryRam
 {
 private:
-    FILE *writeStream;
+    FILE *stream;
+    bool saveExists;
 
     static constexpr u32 MAX_FILENAME_SIZE = 260;
 
