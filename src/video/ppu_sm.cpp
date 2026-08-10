@@ -3,16 +3,15 @@
 
 void PpuStateMachine::incrementLy()
 {
-    if (ppu->windowVisible() && lcd->getRegisters()->ly >= lcd->getRegisters()->windowY &&
-        lcd->getRegisters()->ly < lcd->getRegisters()->windowY + YRES)
+    if (ppu->windowVisible() && lcd->registers.ly >= lcd->registers.windowY &&
+        lcd->registers.ly < lcd->registers.windowY + YRES)
     {
         ppu->windowLine++;
     }
 
-    auto registers = lcd->getRegisters();
-    registers->ly++;
+    lcd->registers.ly++;
 
-    if (registers->ly == registers->lyCompare)
+    if (lcd->registers.ly == lcd->registers.lyCompare)
     {
         lcd->lycSet(1);
 
@@ -38,7 +37,7 @@ PpuStateMachine::PpuStateMachine(
 
 void PpuStateMachine::oamMode()
 {
-    if (ppu->getLineTicks() >= 80)
+    if (ppu->lineTicks >= 80)
     {
         lcd->modeSet(XFER);
 
@@ -49,7 +48,7 @@ void PpuStateMachine::oamMode()
         ppu->getFIFO()->fifoX = 0;
     }
 
-    if (ppu->getLineTicks() == 1)
+    if (ppu->lineTicks == 1)
     { // must do it 40 times with 2 ticks for each oam
         ppu->lineSpriteCount = 0;
         ppu->lineSprites = nullptr;
@@ -77,27 +76,27 @@ void PpuStateMachine::xferMode()
 
 void PpuStateMachine::vblankMode()
 {
-    if (ppu->getLineTicks() >= TICKS_PER_LINE)
+    if (ppu->lineTicks >= TICKS_PER_LINE)
     {
         incrementLy();
 
-        if (lcd->getRegisters()->ly >= LINES_PER_FRAME)
+        if (lcd->registers.ly >= LINES_PER_FRAME)
         {
             lcd->modeSet(OAM);
-            lcd->getRegisters()->ly = 0;
+            lcd->registers.ly = 0;
             ppu->windowLine = 0;
         }
-        ppu->setLineTicks(0);
+        ppu->lineTicks = 0;
     }
 }
 
 void PpuStateMachine::hblankMode()
 {
-    if (ppu->getLineTicks() >= TICKS_PER_LINE)
+    if (ppu->lineTicks >= TICKS_PER_LINE)
     {
         incrementLy();
 
-        if (lcd->getRegisters()->ly >= YRES)
+        if (lcd->registers.ly >= YRES)
         {
             lcd->modeSet(VBLANK);
 
@@ -108,13 +107,13 @@ void PpuStateMachine::hblankMode()
                 interrupts->setIFflag(LCD_, 1);
             }
 
-            ppu->setCurrentFrame(ppu->getCurrentFrame() + 1);
+            ppu->currentFrame++;
         }
         else
         {
             lcd->modeSet(OAM);
         }
 
-        ppu->setLineTicks(0);
+        ppu->lineTicks = 0;
     }
 }

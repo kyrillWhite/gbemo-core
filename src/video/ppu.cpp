@@ -47,9 +47,9 @@ void PPU::tick()
 
 bool PPU::windowVisible()
 {
-    return lcd->windowEnable() && lcd->getRegisters()->windowX >= 0 &&
-           lcd->getRegisters()->windowX <= 166 && lcd->getRegisters()->windowY >= 0 &&
-           lcd->getRegisters()->windowY < YRES;
+    return lcd->windowEnable() && lcd->registers.windowX >= 0 &&
+           lcd->registers.windowX <= 166 && lcd->registers.windowY >= 0 &&
+           lcd->registers.windowY < YRES;
 }
 
 void PPU::loadLineSpites()
@@ -57,7 +57,7 @@ void PPU::loadLineSpites()
     lineSpriteCount = 0;
     lineSprites = nullptr;
 
-    int curY = lcd->getRegisters()->ly;
+    int curY = lcd->registers.ly;
     u8 sprite_height = lcd->objSize();
 
     for (int i = 0; i < 40; i++)
@@ -135,26 +135,6 @@ void PPU::vramWrite(u16 address, u8 value, bool inner)
     vram[address - 0x8000] = value;
 }
 
-u32 PPU::getLineTicks()
-{
-    return lineTicks;
-}
-
-void PPU::setLineTicks(u32 value)
-{
-    lineTicks = value;
-}
-
-u32 PPU::getCurrentFrame()
-{
-    return currentFrame;
-}
-
-void PPU::setCurrentFrame(u32 value)
-{
-    currentFrame = value;
-}
-
 FIFO *PPU::getFIFO()
 {
     return &fifo;
@@ -165,7 +145,7 @@ u8 PPU::fetchSpritePixels(int bit, u8 color, u8 bgColor)
     for (int i = 0; i < fetchedEntryCount; i++)
     {
         int spX = (fetchedEntries[i].xPos - 8) +
-                  ((lcd->getRegisters()->scrollX % 8));
+                  ((lcd->registers.scrollX % 8));
 
         if (spX + 8 < fifo.fifoX)
         {
@@ -198,7 +178,7 @@ u8 PPU::fetchSpritePixels(int bit, u8 color, u8 bgColor)
 
         if (!bgPriority || bgColor == 0)
         {
-            color = (fetchedEntries[i].dmgPalette) ? lcd->getRegisters()->sp2Colors[hi | lo] : lcd->getRegisters()->sp1Colors[hi | lo];
+            color = (fetchedEntries[i].dmgPalette) ? lcd->registers.sp2Colors[hi | lo] : lcd->registers.sp1Colors[hi | lo];
 
             if (hi | lo)
             {
@@ -217,17 +197,17 @@ void PPU::pipelineLoadWindowTile()
         return;
     }
 
-    u8 window_y = lcd->getRegisters()->windowY;
+    u8 window_y = lcd->registers.windowY;
 
-    if (fifo.fetchX + 7 >= lcd->getRegisters()->windowX &&
-        fifo.fetchX + 7 < lcd->getRegisters()->windowX + YRES + 14)
+    if (fifo.fetchX + 7 >= lcd->registers.windowX &&
+        fifo.fetchX + 7 < lcd->registers.windowX + YRES + 14)
     {
-        if (lcd->getRegisters()->ly >= window_y && lcd->getRegisters()->ly < window_y + XRES)
+        if (lcd->registers.ly >= window_y && lcd->registers.ly < window_y + XRES)
         {
             u8 w_tile_y = windowLine / 8;
 
             fifo.bgwFetchData[0] = vramRead(lcd->winTileMapArea() +
-                                                ((fifo.fetchX + 7 - lcd->getRegisters()->windowX) / 8) +
+                                                ((fifo.fetchX + 7 - lcd->registers.windowX) / 8) +
                                                 (w_tile_y * 32),
                                             true);
 
@@ -241,7 +221,7 @@ void PPU::pipelineLoadWindowTile()
 
 void PPU::pipelineLoadSpriteData(u8 offset)
 {
-    int curY = lcd->getRegisters()->ly;
+    int curY = lcd->registers.ly;
     u8 spriteHeight = lcd->objSize();
 
     for (int i = 0; i < fetchedEntryCount; i++)
@@ -271,7 +251,7 @@ void PPU::pipelineLoadSpriteTile()
 
     while (le)
     {
-        int spX = (le->oam.xPos - 8) + (lcd->getRegisters()->scrollX % 8);
+        int spX = (le->oam.xPos - 8) + (lcd->registers.scrollX % 8);
 
         if ((spX >= fifo.fetchX && spX < fifo.fetchX + 8) ||
             ((spX + 8) >= fifo.fetchX && (spX + 8) < fifo.fetchX + 8))
@@ -368,9 +348,9 @@ void PPU::pipelinePushPixel()
     {
         u8 pixel = fifo.pop();
 
-        if (fifo.lineX >= lcd->getRegisters()->scrollX % 8)
+        if (fifo.lineX >= lcd->registers.scrollX % 8)
         {
-            videoBuffer[fifo.pushedX + lcd->getRegisters()->ly * XRES] = pixel;
+            videoBuffer[fifo.pushedX + lcd->registers.ly * XRES] = pixel;
             fifo.pushedX++;
         }
 
@@ -380,9 +360,9 @@ void PPU::pipelinePushPixel()
 
 void PPU::pipelineProcess()
 {
-    fifo.mapY = lcd->getRegisters()->ly + lcd->getRegisters()->scrollY;
-    fifo.mapX = fifo.fetchX + lcd->getRegisters()->scrollX;
-    fifo.tileY = ((lcd->getRegisters()->ly + lcd->getRegisters()->scrollY) % 8) * 2;
+    fifo.mapY = lcd->registers.ly + lcd->registers.scrollY;
+    fifo.mapX = fifo.fetchX + lcd->registers.scrollX;
+    fifo.tileY = ((lcd->registers.ly + lcd->registers.scrollY) % 8) * 2;
 
     if (!(lineTicks & 1))
     {
@@ -399,18 +379,18 @@ bool PPU::pipelineFifoAdd()
         return false;
     }
 
-    int x = fifo.fetchX - (8 - (lcd->getRegisters()->scrollX % 8));
+    int x = fifo.fetchX - (8 - (lcd->registers.scrollX % 8));
 
     for (int i = 0; i < 8; i++)
     {
         int bit = 7 - i;
         u8 hi = !!(fifo.bgwFetchData[1] & (1 << bit));
         u8 lo = !!(fifo.bgwFetchData[2] & (1 << bit)) << 1;
-        u8 color = lcd->getRegisters()->bgColors[hi | lo];
+        u8 color = lcd->registers.bgColors[hi | lo];
 
         if (!lcd->bgwEnable())
         {
-            color = lcd->getRegisters()->bgColors[0];
+            color = lcd->registers.bgColors[0];
         }
 
         if (lcd->objEnable())
@@ -418,7 +398,6 @@ bool PPU::pipelineFifoAdd()
             color = fetchSpritePixels(bit, color, hi | lo);
         }
 
-        // if ((x + i) >= 0) {
         if (x >= 0)
         {
             fifo.push(color);

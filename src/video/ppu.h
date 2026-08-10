@@ -20,11 +20,12 @@ private:
     OAMEntry oam[40]; // TODO: move to ppu
     u8 vram[8192];
 
-    u32 currentFrame;
-    u32 lineTicks;
     u8 videoBuffer[YRES * XRES];
 
 public:
+    u32 lineTicks;
+    u32 currentFrame;
+
     PPU(LCD *_lcd, bool skipBoot);
 
     u8 lineSpriteCount;
@@ -46,11 +47,6 @@ public:
     void oamWrite(u16 address, u8 value, bool inner = false);
     u8 vramRead(u16 address, bool inner = false);
     void vramWrite(u16 address, u8 value, bool inner = false);
-
-    u32 getLineTicks();
-    void setLineTicks(u32 value);
-    u32 getCurrentFrame();
-    void setCurrentFrame(u32 value);
 
     FIFO *getFIFO();
 
