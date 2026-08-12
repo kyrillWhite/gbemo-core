@@ -36,7 +36,7 @@ MBC3::MBC3(u32 _romSize, const u8 *_romData, u32 _ramSize, BatteryRam *_battery,
 {
     if (ramSize != 0)
     {
-        ramData.assign(ramSize, 0xFF);
+        std::fill_n(ramData.begin(), ramSize, 0xFF);
         if (battery)
         {
             if (battery->isSaveExist())
