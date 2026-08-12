@@ -12,6 +12,8 @@
 #include "cartridge/rom_only.h"
 #include "cartridge/mbc1.h"
 #include "cartridge/mbc2.h"
+#include "cartridge/mbc3.h"
+#include "cartridge/mbc5.h"
 
 class Cartridge
 {
@@ -20,7 +22,9 @@ private:
     std::array<u8, MAX_ROM_SIZE> romData;
 
     std::optional<BatteryRam> battery;
-    std::variant<std::monostate, RomOnly, MBC1, MBC2> memoryStorage;
+    // Destroyed before `battery`, which the MBC3 clock still needs on its way
+    // out - keep it declared last.
+    std::variant<std::monostate, RomOnly, MBC1, MBC2, MBC3, MBC5> memoryStorage;
 
     int validateChecksum();
     void printHeaderInfo(const char *filename);

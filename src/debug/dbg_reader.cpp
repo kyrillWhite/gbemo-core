@@ -1,25 +1,32 @@
+#include <cstdio>
 #include "debug/dbg_reader.h"
 
-DbgReader::DbgReader(Memory *_memory) : memory(_memory), messageSize(0)
+DbgReader::DbgReader(Memory *_memory) : memory(_memory), printed(0)
 {
 }
 
 void DbgReader::update()
 {
-    if (memory->read(0xFF02) == 0x81)
+    u32 size = memory->getSerialLogSize();
+    if (printed >= size)
     {
-        char c = memory->read(0xFF01);
-
-        message[messageSize++] = c;
-
-        memory->write(0xFF02, 0);
+        return;
     }
+
+    const char *log = memory->getSerialLog();
+    while (printed < size)
+    {
+        char c = log[printed++];
+        // Games that poke the link port write arbitrary bytes; only the text
+        // a test ROM sends is worth putting on a terminal.
+        if (c == '\n' || (c >= 0x20 && c < 0x7F))
+        {
+            putchar(c);
+        }
+    }
+    fflush(stdout);
 }
 
 void DbgReader::print()
 {
-    if (message[0] && globalTicks % (PRINT_SKIP + 1) == 0)
-    {
-        printf("DBG: %s\n", message);
-    }
 }

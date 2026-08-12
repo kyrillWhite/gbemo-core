@@ -75,10 +75,13 @@ u8 Memory::read(u16 address)
     {
         return wramN[address - 0xD000];
     }
-    // echo ram
+    // echo ram - mirrors C000-DDFF, so the upper half has to land in the
+    // second bank. Folding all of it onto wram0 runs off the end of a 4 KiB
+    // array from 0xF000 up.
     else if (address <= 0xFDFF)
     {
-        return wram0[address - 0xE000];
+        u16 mirrored = address - 0x2000;
+        return mirrored <= 0xCFFF ? wram0[mirrored - 0xC000] : wramN[mirrored - 0xD000];
     }
     // object attribute memory
     else if (address <= 0xFE9F)
@@ -92,7 +95,8 @@ u8 Memory::read(u16 address)
     // not usable
     else if (address <= 0xFEFF)
     {
-        return 0; // TODO: https://gbdev.io/pandocs/Memory_Map.html#fea0feff-range
+        // reads back as zero on DMG
+        return 0x00; // TODO: https://gbdev.io/pandocs/Memory_Map.html#fea0feff-range
     }
     // i/o registers
     else if (address <= 0xFF7F)
@@ -138,10 +142,11 @@ void Memory::write(u16 address, u8 value)
     {
         wramN[address - 0xD000] = value;
     }
-    // echo ram
+    // echo ram - see the read side
     else if (address <= 0xFDFF)
     {
-        wram0[address - 0xE000] = value;
+        u16 mirrored = address - 0x2000;
+        (mirrored <= 0xCFFF ? wram0[mirrored - 0xC000] : wramN[mirrored - 0xD000]) = value;
     }
     // object attribute memory
     else if (address <= 0xFE9F)
@@ -173,4 +178,14 @@ void Memory::write(u16 address, u8 value)
     {
         interrupts->setIE(value);
     }
+}
+
+const char *Memory::getSerialLog() const
+{
+    return memoryIO.getSerialLog();
+}
+
+u32 Memory::getSerialLogSize() const
+{
+    return memoryIO.getSerialLogSize();
 }

@@ -25,7 +25,7 @@ void ControlUnit::handleInterrupt()
         rf->setPC(idu->decrement(rf->getPC()));
         instructionCycle++;
     }
-    if (instructionCycle == 1)
+    else if (instructionCycle == 1)
     {
         bus->setAddress(rf->getSP());
         rf->setSP(idu->decrement(rf->getSP()));
@@ -446,9 +446,14 @@ void ControlUnit::executeInstruction()
             enablingIME = false;
         }
     }
-    if (halted && interrupts->getIF())
+    // HALT wakes on a pending *and enabled* interrupt - IE gates the wake-up
+    // exactly as it gates the dispatch. Testing IF alone means a flag nobody
+    // enabled, and which therefore nobody ever clears, leaves HALT unable to
+    // block again for the rest of the run: every wait-for-VBlank falls
+    // straight through and the game runs its logic many times per frame.
+    if (halted && (interrupts->getIF() & interrupts->getIE() & 0x1F))
     {
-        halted = false; // if IME is disable has strange behavior
+        halted = false;
     }
     if (!interruptCommand.isHandling)
     {
@@ -2099,8 +2104,19 @@ void ControlUnit::executeStdInstruction()
     }
     case Opcode::HaltSystemClock:
     {
-        halted = true;
-        M1();
+        // The HALT bug: with interrupts disabled but one already pending the
+        // CPU does not stop at all, and PC fails to advance past the byte it
+        // just fetched, so that byte is executed twice.
+        if (!IME && (interrupts->getIF() & interrupts->getIE() & 0x1F))
+        {
+            M1();
+            rf->setPC(idu->decrement(rf->getPC()));
+        }
+        else
+        {
+            halted = true;
+            M1();
+        }
         break;
     }
     case Opcode::StopSystemAndMainClocks:
@@ -2127,6 +2143,7 @@ void ControlUnit::executeStdInstruction()
         // one cycle
         M1();
         IME = false;
+        enablingIME = false;
         break;
     }
     case Opcode::CB:

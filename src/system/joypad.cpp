@@ -33,15 +33,28 @@ void Joypad::setButtonState(Button button, bool isDown)
     }
 }
 
-Joypad::Joypad() : state{0, 0, 0, 0, 0, 0, 0, 0},
-                   buttonSelected(false),
-                   dirSelected(false)
+Joypad::Joypad(Interrupts *_interrupts) : interrupts(_interrupts),
+                                          state{0, 0, 0, 0, 0, 0, 0, 0},
+                                          buttonSelected(false),
+                                          dirSelected(false)
 {
+}
+
+void Joypad::raiseOnFallingEdge(u8 before)
+{
+    u8 after = read();
+    if ((before & ~after) & 0x0F)
+    {
+        interrupts->setIFflag(Joypad_, true);
+    }
 }
 
 u8 Joypad::read()
 {
-    u8 output = 0xCF;
+    u8 output = 0xC0;
+    output |= buttonSelected ? 0x20 : 0;
+    output |= dirSelected ? 0x10 : 0;
+    output |= 0x0F;
 
     if (!buttonSelected)
     {
@@ -88,13 +101,20 @@ u8 Joypad::read()
 
 void Joypad::write(u8 value)
 {
+    u8 before = read();
+
+    // Both select lines are active low.
     buttonSelected = value & 0x20;
     dirSelected = value & 0x10;
+
+    raiseOnFallingEdge(before);
 }
 
 void Joypad::pressButton(Button button)
 {
+    u8 before = read();
     setButtonState(button, true);
+    raiseOnFallingEdge(before);
 }
 
 void Joypad::releaseButton(Button button)

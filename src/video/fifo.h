@@ -21,7 +21,7 @@ public:
     u8 pushedX;
     u8 fetchX;
     u8 bgwFetchData[3];
-    u8 fetchEntryData[6];
+    u8 fetchEntryData[20];
     u8 mapY;
     u8 mapX;
     u8 tileY;

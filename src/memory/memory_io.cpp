@@ -10,7 +10,9 @@ MemoryIO::MemoryIO(
                        booted(false),
                        joypad(_joypad),
                        lcd(_lcd),
-                       apu(_apu)
+                       apu(_apu),
+                       serialLog{},
+                       serialLogSize(0)
 {
     serial[0] = 0x00;
     serial[1] = 0x7E;
@@ -19,6 +21,29 @@ MemoryIO::MemoryIO(
 bool MemoryIO::isBooted()
 {
     return booted;
+}
+
+void MemoryIO::transferSerial()
+{
+    if (serialLogSize < SERIAL_LOG_CAPACITY - 1)
+    {
+        serialLog[serialLogSize++] = static_cast<char>(serial[0]);
+        serialLog[serialLogSize] = '\0';
+    }
+
+    serial[0] = 0xFF;
+    serial[1] &= ~0x80;
+    interrupts->setIFflag(Serial, true);
+}
+
+const char *MemoryIO::getSerialLog() const
+{
+    return serialLog;
+}
+
+u32 MemoryIO::getSerialLogSize() const
+{
+    return serialLogSize;
 }
 
 u8 MemoryIO::read(u16 from)
@@ -31,17 +56,17 @@ u8 MemoryIO::read(u16 from)
     // serial transfer
     else if (from >= 0xFF01 && from <= 0xFF02)
     {
-        return serial[from - 0xFF01];
+        return from == 0xFF02 ? (serial[1] | 0x7E) : serial[0];
     }
     // timer and divider
     else if (from >= 0xFF04 && from <= 0xFF07)
     {
         return timer->read(from);
     }
-    // interrupts flag (IF)
+    // interrupts flag (IF) - the three unused bits read as one
     else if (from == 0xFF0F)
     {
-        return interrupts->getIF();
+        return interrupts->getIF() | 0xE0;
     }
     // audio
     else if (from >= 0xFF10 && from <= 0xFF26)
@@ -56,18 +81,17 @@ u8 MemoryIO::read(u16 from)
     // lcd
     else if (from >= 0xFF40 && from <= 0xFF4B)
     {
-        return lcd->read(from);
+        return static_cast<u8>(lcd->read(from));
     }
     // set to non-zero to disable boot rom
     else if (from == 0xFF50)
     {
-        return 0;
-        NOT_AVAILABLE
+        return 0xFF;
     }
     else
     {
-        return 0;
-        NOT_AVAILABLE
+        // an unmapped I/O register floats high
+        return 0xFF;
     }
 }
 
@@ -79,9 +103,19 @@ void MemoryIO::write(u16 to, u8 value)
         joypad->write(value);
     }
     // serial transfer
-    else if (to >= 0xFF01 && to <= 0xFF02)
+    else if (to == 0xFF01)
     {
-        serial[to - 0xFF01] = value;
+        serial[0] = value;
+    }
+    else if (to == 0xFF02)
+    {
+        serial[1] = value;
+        // Bit 0 picks the internal clock: only then does this side drive the
+        // transfer, and only then does it finish on its own.
+        if ((value & 0x81) == 0x81)
+        {
+            transferSerial();
+        }
     }
     // timer and divider
     else if (to >= 0xFF04 && to <= 0xFF07)
@@ -91,7 +125,7 @@ void MemoryIO::write(u16 to, u8 value)
     // interrupts flag (IF)
     else if (to == 0xFF0F)
     {
-        interrupts->setIF(value);
+        interrupts->setIF(value & 0x1F);
     }
     // audio
     else if (to >= 0xFF10 && to <= 0xFF26)
@@ -116,6 +150,5 @@ void MemoryIO::write(u16 to, u8 value)
     else
     {
         return;
-        NOT_AVAILABLE
     }
 }

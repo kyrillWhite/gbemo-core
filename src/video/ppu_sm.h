@@ -11,6 +11,12 @@ private:
     PPU *ppu;
     Interrupts *interrupts;
 
+    // The STAT interrupt is one wired-OR line, not four separate events: it
+    // fires on the rising edge of "any enabled source is true" and stays quiet
+    // while it is held high. Without this a mode-2 entry that arrives while
+    // LY=LYC is already asserting the line raises a second, spurious request.
+    bool statLine;
+
     void incrementLy();
 
 public:
@@ -23,4 +29,6 @@ public:
     void xferMode();
     void vblankMode();
     void hblankMode();
+
+    void updateStatLine();
 };

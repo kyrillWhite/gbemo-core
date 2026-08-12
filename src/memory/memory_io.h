@@ -16,6 +16,12 @@ private:
     u8 serial[2];
     Joypad *joypad;
 
+    static constexpr u32 SERIAL_LOG_CAPACITY = 4096;
+    char serialLog[SERIAL_LOG_CAPACITY];
+    u32 serialLogSize;
+
+    void transferSerial();
+
 public:
     MemoryIO(
         Interrupts *_interrupts,
@@ -28,4 +34,7 @@ public:
 
     u8 read(u16 from);
     void write(u16 to, u8 value);
+
+    const char *getSerialLog() const;
+    u32 getSerialLogSize() const;
 };

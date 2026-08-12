@@ -4,7 +4,7 @@
 
 static constexpr char SAVE_EXTENSION[] = ".sav";
 
-BatteryRam::BatteryRam(const char *romFilename) : filename{}
+BatteryRam::BatteryRam(const char *romFilename) : stream(nullptr), saveExists(false), fileSize(0), filename{}
 {
     const char *stem = romFilename;
     for (const char *c = romFilename; *c != '\0'; c++)
@@ -31,7 +31,12 @@ BatteryRam::BatteryRam(const char *romFilename) : filename{}
     saveExists = fopen_s(&stream, filename.data(), "r+b") == 0 && stream;
     if (!saveExists)
     {
-        fopen_s(&stream, filename.data(), "wb");
+        fopen_s(&stream, filename.data(), "w+b");
+    }
+    else
+    {
+        fseek(stream, 0, SEEK_END);
+        fileSize = static_cast<u32>(ftell(stream));
     }
 }
 
@@ -48,7 +53,17 @@ bool BatteryRam::isSaveExist()
     return saveExists;
 }
 
+u32 BatteryRam::size() const
+{
+    return fileSize;
+}
+
 void BatteryRam::save(const u8 *ramData, u32 ramSize)
+{
+    saveAt(0, ramData, ramSize);
+}
+
+void BatteryRam::saveAt(u32 offset, const u8 *data, u32 size)
 {
     if (!stream)
     {
@@ -56,26 +71,41 @@ void BatteryRam::save(const u8 *ramData, u32 ramSize)
         return;
     }
 
-    fseek(stream, 0, SEEK_SET);
+    fseek(stream, static_cast<long>(offset), SEEK_SET);
 
-    if (fwrite(ramData, sizeof(u8), ramSize, stream) != ramSize)
+    if (fwrite(data, sizeof(u8), size, stream) != size)
     {
         printf("Save error: failed to write all SRAM to \'%s\'\n", filename.data());
     }
     fflush(stream);
+
+    if (offset + size > fileSize)
+    {
+        fileSize = offset + size;
+    }
+}
+
+void BatteryRam::saveByte(u32 offset, u8 value)
+{
+    saveAt(offset, &value, 1);
 }
 
 void BatteryRam::load(u8 *ramData, u32 ramSize)
 {
-    if (!stream)
-    {
-        return;
-    }
-
-    fseek(stream, 0, SEEK_SET);
-
-    if (fread(ramData, sizeof(u8), ramSize, stream) != ramSize)
+    if (!loadAt(0, ramData, ramSize))
     {
         printf("Load warning: only partially read SRAM from \'%s\'\n", filename.data());
     }
+}
+
+bool BatteryRam::loadAt(u32 offset, u8 *data, u32 size)
+{
+    if (!stream)
+    {
+        return false;
+    }
+
+    fseek(stream, static_cast<long>(offset), SEEK_SET);
+
+    return fread(data, sizeof(u8), size, stream) == size;
 }

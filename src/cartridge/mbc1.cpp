@@ -1,14 +1,27 @@
 #include <algorithm>
 #include "cartridge/mbc1.h"
 
+// banks-1, rounded up to a power of two: the cartridge only wires as many bank
+// lines as it has banks, so a write above that wraps rather than reading past
+// the end of the ROM.
+static u8 bankMaskFor(u32 romSize)
+{
+    u32 banks = romSize / (16 * KIB);
+    u8 mask = 0;
+    while (mask + 1u < banks && mask < 0x7F)
+    {
+        mask = static_cast<u8>((mask << 1) | 1);
+    }
+    return mask;
+}
+
 MBC1::MBC1(u32 _romSize, const u8 *_romData, u32 _ramSize, BatteryRam *_battery) : CartridgeMemory(std::min(_romSize, MBC1_MAX_ROM_SIZE), _romData),
                                                                                    battery(_battery),
                                                                                    ramSize(std::min(_ramSize, MBC1_MAX_RAM_SIZE)),
-                                                                                   ramData{},
+                                                                                   romBankMask(bankMaskFor(std::min(_romSize, MBC1_MAX_ROM_SIZE))),
                                                                                    ramEnable(false),
-                                                                                   romBankNumber(0),
-                                                                                   ramBankNumber(0),
-                                                                                   secondRomBankNumber(0),
+                                                                                   bank1(1),
+                                                                                   bank2(0),
                                                                                    bankingMode(false)
 {
     if (ramSize == 0)
@@ -16,29 +29,51 @@ MBC1::MBC1(u32 _romSize, const u8 *_romData, u32 _ramSize, BatteryRam *_battery)
         return;
     }
 
-    ramData.fill(0x0F);
-    if (battery && battery->isSaveExist())
+    ramData.assign(ramSize, 0xFF);
+    if (battery)
     {
-        battery->load(ramData.data(), ramSize);
+        if (battery->isSaveExist())
+        {
+            battery->load(ramData.data(), ramSize);
+        }
+        else
+        {
+            battery->save(ramData.data(), ramSize);
+        }
     }
+}
+
+u32 MBC1::romOffset(u16 address) const
+{
+    // 0000-3FFF is bank 0, except in mode 1 where the two high bank lines
+    // reach it as well - that is how the large MBC1 carts see banks 0x20,
+    // 0x40 and 0x60.
+    if (address <= 0x3FFF)
+    {
+        u8 bank = bankingMode ? static_cast<u8>((bank2 & 0b11) << 5) : 0;
+        return (bank & romBankMask) * 0x4000u + address;
+    }
+
+    u8 low5 = bank1 & 0b11111;
+    if (low5 == 0)
+    {
+        low5 = 1;
+    }
+    u8 bank = static_cast<u8>(((bank2 & 0b11) << 5) | low5);
+    return (bank & romBankMask) * 0x4000u + (address - 0x4000u);
+}
+
+u32 MBC1::ramOffset(u16 address) const
+{
+    u8 bank = bankingMode ? (bank2 & 0b11) : 0;
+    return (address - 0xA000u) + bank * 0x2000u;
 }
 
 u8 MBC1::read(u16 address)
 {
-    // cartridge static rom
-    if (address <= 0x3FFF)
+    if (address <= 0x7FFF)
     {
-        u8 high = bankingMode ? 0 : (secondRomBankNumber & 0b11) << 5;
-        return readRom(address + high * 0x4000);
-    }
-    // cartridge switch rom
-    else if (address <= 0x7FFF)
-    {
-        u8 low5 = romBankNumber & 0b11111;
-        if (low5 == 0)
-            low5 = 1;
-        u8 high2 = (secondRomBankNumber & 0b11) << 5;
-        return readRom((address - 0x4000) + (high2 | low5) * 0x4000);
+        return readRom(romOffset(address));
     }
     // switchable ram
     else if (address >= 0xA000 && address <= 0xBFFF)
@@ -47,17 +82,9 @@ u8 MBC1::read(u16 address)
         {
             return 0xFF;
         }
-        u8 bankNumber = bankingMode ? (ramBankNumber & 0b11) : 0;
-        u32 offset = (address - 0xA000) + bankNumber * 0x2000;
 
-        if (offset < ramSize)
-        {
-            return ramData[offset];
-        }
-        else
-        {
-            return 0xFF;
-        }
+        u32 offset = ramOffset(address);
+        return offset < ramSize ? ramData[offset] : 0xFF;
     }
     else
     {
@@ -69,22 +96,15 @@ void MBC1::write(u16 address, u8 value)
 {
     if (address <= 0x1FFF)
     {
-        ramEnable = value == 0xA;
+        ramEnable = (value & 0x0F) == 0x0A;
     }
     else if (address <= 0x3FFF)
     {
-        romBankNumber = value & 0b11111;
+        bank1 = value & 0b11111;
     }
     else if (address <= 0x5FFF)
     {
-        if (bankingMode == 0)
-        {
-            secondRomBankNumber = value & 0b11;
-        }
-        else
-        {
-            ramBankNumber = value & 0b11;
-        }
+        bank2 = value & 0b11;
     }
     else if (address <= 0x7FFF)
     {
@@ -97,17 +117,17 @@ void MBC1::write(u16 address, u8 value)
         {
             return;
         }
-        u8 bankNumber = bankingMode ? (ramBankNumber & 0b11) : 0;
-        u32 offset = address - 0xA000 + ramBankNumber * 0x2000;
 
-        if (offset < ramSize)
+        u32 offset = ramOffset(address);
+        if (offset >= ramSize)
         {
-            ramData[offset] = value;
+            return;
         }
 
+        ramData[offset] = value;
         if (battery)
         {
-            battery->save(ramData.data(), ramSize);
+            battery->saveByte(offset, value);
         }
     }
 }

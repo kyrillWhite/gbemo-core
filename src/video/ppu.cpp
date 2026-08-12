@@ -3,6 +3,7 @@
 
 PPU::PPU(LCD *_lcd, bool skipBoot) : lcd(_lcd),
                                      currentFrame(0),
+                                     lcdWasEnabled(true),
                                      lineTicks(0),
                                      lineSpriteCount(0),
                                      lineSprites(nullptr),
@@ -26,6 +27,36 @@ void PPU::setStateMachine(PpuStateMachine *_ppuSm)
 
 void PPU::tick()
 {
+    // With LCDC bit 7 clear the controller is stopped, not merely idle: the
+    // screen goes blank, LY reads 0 and no mode - so no VBlank and no STAT
+    // interrupt - ever comes out of it. Games switch it off to rewrite VRAM
+    // in bulk and would otherwise be fed a frame that never happened.
+    if (!lcd->enable())
+    {
+        if (lcdWasEnabled)
+        {
+            lcdWasEnabled = false;
+            lineTicks = 0;
+            windowLine = 0;
+            lcd->registers.ly = 0;
+            lcd->modeSet(HBLANK);
+            lcd->lycSet(false);
+            fifo.reset();
+            memset(videoBuffer, 0, YRES * XRES);
+            ppuSm->updateStatLine();
+        }
+        return;
+    }
+
+    if (!lcdWasEnabled)
+    {
+        lcdWasEnabled = true;
+        lineTicks = 0;
+        windowLine = 0;
+        lcd->registers.ly = 0;
+        lcd->modeSet(OAM);
+    }
+
     lineTicks++;
 
     switch (lcd->mode())
@@ -43,12 +74,16 @@ void PPU::tick()
         ppuSm->xferMode();
         break;
     }
+
+    // STAT is level-triggered off whatever the mode, LY and the enable bits
+    // say right now, so it has to be re-evaluated every tick - the CPU can
+    // change the enable bits mid-line just as easily as the PPU changes mode.
+    ppuSm->updateStatLine();
 }
 
 bool PPU::windowVisible()
 {
-    return lcd->windowEnable() && lcd->registers.windowX >= 0 &&
-           lcd->registers.windowX <= 166 && lcd->registers.windowY >= 0 &&
+    return lcd->windowEnable() && lcd->registers.windowX <= 166 &&
            lcd->registers.windowY < YRES;
 }
 
@@ -62,18 +97,23 @@ void PPU::loadLineSpites()
 
     for (int i = 0; i < 40; i++)
     {
-        OAMEntry e = oam[i];
-        if (!e.xPos)
-            continue;
-        if (lineSpriteCount >= 10)
+        if (lineSpriteCount >= MAX_LINE_SPRITES)
             break;
 
+        OAMEntry e = oam[i];
+
+        // Selection looks at Y and nothing else. A sprite parked at X=0 draws
+        // nothing, but it still takes one of the ten slots - which is exactly
+        // how games hide a sprite and why dropping it here would let an
+        // eleventh one appear that hardware never shows.
         if (e.yPos <= curY + 16 && e.yPos + sprite_height > curY + 16)
         {
             auto *entry = &lineEntryArray[lineSpriteCount++];
             entry->oam = e;
             entry->next = nullptr;
 
+            // Sorted by X ascending, and strictly so: equal X is broken by OAM
+            // index, and the earlier index is already in the list.
             if (!lineSprites || e.xPos < lineSprites->oam.xPos)
             {
                 entry->next = lineSprites;
@@ -85,7 +125,7 @@ void PPU::loadLineSpites()
                 OAMLineEntry *cur = lineSprites->next;
                 while (cur)
                 {
-                    if (e.xPos <= cur->oam.xPos)
+                    if (e.xPos < cur->oam.xPos)
                     {
                         prev->next = entry;
                         entry->next = cur;
@@ -127,12 +167,12 @@ void PPU::oamWrite(u16 address, u8 value, bool inner)
 
 u8 PPU::vramRead(u16 address, bool inner)
 {
-    return vram[address - 0x8000];
+    return vram[(address - 0x8000) & 0x1FFF];
 }
 
 void PPU::vramWrite(u16 address, u8 value, bool inner)
 {
-    vram[address - 0x8000] = value;
+    vram[(address - 0x8000) & 0x1FFF] = value;
 }
 
 FIFO *PPU::getFIFO()
@@ -140,7 +180,7 @@ FIFO *PPU::getFIFO()
     return &fifo;
 }
 
-u8 PPU::fetchSpritePixels(int bit, u8 color, u8 bgColor)
+u8 PPU::fetchSpritePixels(u8 color, u8 bgColor)
 {
     for (int i = 0; i < fetchedEntryCount; i++)
     {
@@ -159,32 +199,31 @@ u8 PPU::fetchSpritePixels(int bit, u8 color, u8 bgColor)
             continue;
         }
 
-        bit = (7 - offset);
+        int spriteBit = fetchedEntries[i].xFlip ? offset : (7 - offset);
 
-        if (fetchedEntries[i].xFlip)
-        {
-            bit = offset;
-        }
+        u8 lo = !!(fifo.fetchEntryData[i * 2] & (1 << spriteBit));
+        u8 hi = !!(fifo.fetchEntryData[(i * 2) + 1] & (1 << spriteBit)) << 1;
+        u8 index = hi | lo;
 
-        u8 hi = !!(fifo.fetchEntryData[i * 2] & (1 << bit));
-        u8 lo = !!(fifo.fetchEntryData[(i * 2) + 1] & (1 << bit)) << 1;
-
-        bool bgPriority = fetchedEntries[i].priority;
-
-        if (!(hi | lo))
+        // Colour 0 is transparent, so this sprite does not claim the pixel and
+        // the next one along still gets its turn.
+        if (!index)
         {
             continue;
         }
 
-        if (!bgPriority || bgColor == 0)
+        // Everything after this point belongs to this sprite alone. The list
+        // is in priority order, so the first one with an opaque pixel wins the
+        // slot outright: if its priority bit then loses to the background, the
+        // background is what shows - not the sprite queued behind it. Letting
+        // that one through is what puts overlapping objects in the wrong
+        // order.
+        if (!fetchedEntries[i].priority || bgColor == 0)
         {
-            color = (fetchedEntries[i].dmgPalette) ? lcd->registers.sp2Colors[hi | lo] : lcd->registers.sp1Colors[hi | lo];
-
-            if (hi | lo)
-            {
-                break;
-            }
+            color = (fetchedEntries[i].dmgPalette) ? lcd->registers.sp2Colors[index] : lcd->registers.sp1Colors[index];
         }
+
+        break;
     }
 
     return color;
@@ -199,22 +238,22 @@ void PPU::pipelineLoadWindowTile()
 
     u8 window_y = lcd->registers.windowY;
 
-    if (fifo.fetchX + 7 >= lcd->registers.windowX &&
-        fifo.fetchX + 7 < lcd->registers.windowX + YRES + 14)
+    if (fifo.fetchX + 7 >= lcd->registers.windowX && lcd->registers.ly >= window_y)
     {
-        if (lcd->registers.ly >= window_y && lcd->registers.ly < window_y + XRES)
+        fifo.bgwFetchData[0] = vramRead(lcd->winTileMapArea() +
+                                            ((fifo.fetchX + 7 - lcd->registers.windowX) / 8) +
+                                            ((windowLine / 8) * 32),
+                                        true);
+
+        // The window has its own line counter, which only advances on the
+        // lines it is actually drawn on. Indexing its rows with the background
+        // one instead shears the window apart whenever SCY is not a multiple
+        // of eight.
+        fifo.tileY = (windowLine % 8) * 2;
+
+        if (lcd->bgAndWinTileDataArea() == 0x8800)
         {
-            u8 w_tile_y = windowLine / 8;
-
-            fifo.bgwFetchData[0] = vramRead(lcd->winTileMapArea() +
-                                                ((fifo.fetchX + 7 - lcd->registers.windowX) / 8) +
-                                                (w_tile_y * 32),
-                                            true);
-
-            if (lcd->bgAndWinTileDataArea() == 0x8800)
-            {
-                fifo.bgwFetchData[0] += 128;
-            }
+            fifo.bgwFetchData[0] += 128;
         }
     }
 }
@@ -249,7 +288,7 @@ void PPU::pipelineLoadSpriteTile()
 {
     OAMLineEntry *le = lineSprites;
 
-    while (le)
+    while (le && fetchedEntryCount < MAX_LINE_SPRITES)
     {
         int spX = (le->oam.xPos - 8) + (lcd->registers.scrollX % 8);
 
@@ -260,11 +299,6 @@ void PPU::pipelineLoadSpriteTile()
         }
 
         le = le->next;
-
-        if (!le || fetchedEntryCount >= 3)
-        {
-            break;
-        }
     }
 }
 
@@ -275,6 +309,11 @@ void PPU::pipelineFetch()
     case FS_TILE:
     {
         fetchedEntryCount = 0;
+
+        // Fixed here, where the tile index is read, rather than every tick:
+        // the window fetch below replaces it with its own row and must not be
+        // overwritten before the two bitplanes are read.
+        fifo.tileY = ((lcd->registers.ly + lcd->registers.scrollY) % 8) * 2;
 
         if (lcd->bgwEnable())
         {
@@ -362,7 +401,6 @@ void PPU::pipelineProcess()
 {
     fifo.mapY = lcd->registers.ly + lcd->registers.scrollY;
     fifo.mapX = fifo.fetchX + lcd->registers.scrollX;
-    fifo.tileY = ((lcd->registers.ly + lcd->registers.scrollY) % 8) * 2;
 
     if (!(lineTicks & 1))
     {
@@ -386,16 +424,22 @@ bool PPU::pipelineFifoAdd()
         int bit = 7 - i;
         u8 hi = !!(fifo.bgwFetchData[1] & (1 << bit));
         u8 lo = !!(fifo.bgwFetchData[2] & (1 << bit)) << 1;
-        u8 color = lcd->registers.bgColors[hi | lo];
+        u8 bgIndex = hi | lo;
+        u8 color = lcd->registers.bgColors[bgIndex];
 
+        // With LCDC bit 0 clear the background is not merely blank, it is gone:
+        // colour 0 everywhere, and sprites draw over it whatever their priority
+        // bit says. Handing the stale fetch data to the sprite mixer instead
+        // makes priority sprites vanish behind a background that is not there.
         if (!lcd->bgwEnable())
         {
+            bgIndex = 0;
             color = lcd->registers.bgColors[0];
         }
 
         if (lcd->objEnable())
         {
-            color = fetchSpritePixels(bit, color, hi | lo);
+            color = fetchSpritePixels(color, bgIndex);
         }
 
         if (x >= 0)

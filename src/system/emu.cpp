@@ -15,7 +15,7 @@ Emu::Emu(bool skipBoot)
     bus = new Bus();
     apu = new APU();
     dma = new DMA();
-    joypad = new Joypad();
+    joypad = new Joypad(interrupts);
     clock = new SystemClock();
 
     timer = new Timer(interrupts, apu, skipBoot);
@@ -97,6 +97,11 @@ bool Emu::tick()
     return true;
     //}
     // return false;
+}
+
+const char *Emu::getSerialLog()
+{
+    return memory->getSerialLog();
 }
 
 void Emu::pressButton(Button button)

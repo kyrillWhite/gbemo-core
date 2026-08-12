@@ -10,6 +10,11 @@ constexpr int TICKS_PER_LINE = 456;
 constexpr int YRES = 144;
 constexpr int XRES = 160;
 
+// A scanline may select ten sprites, and all ten can overlap the same
+// eight-pixel fetch window - a smaller array here silently drops whichever
+// ones come last, which on DMG are the ones furthest right.
+constexpr int MAX_LINE_SPRITES = 10;
+
 class PPU
 {
 private:
@@ -22,6 +27,8 @@ private:
 
     u8 videoBuffer[YRES * XRES];
 
+    bool lcdWasEnabled;
+
 public:
     u32 lineTicks;
     u32 currentFrame;
@@ -32,8 +39,8 @@ public:
     OAMLineEntry *lineSprites;
 
     u8 fetchedEntryCount;
-    OAMEntry fetchedEntries[3];
-    OAMLineEntry lineEntryArray[10];
+    OAMEntry fetchedEntries[MAX_LINE_SPRITES];
+    OAMLineEntry lineEntryArray[MAX_LINE_SPRITES];
     u8 windowLine;
 
     void tick();
@@ -50,7 +57,7 @@ public:
 
     FIFO *getFIFO();
 
-    u8 fetchSpritePixels(int bit, u8 color, u8 bgColor);
+    u8 fetchSpritePixels(u8 color, u8 bgColor);
     void pipelineLoadWindowTile();
     void pipelineLoadSpriteData(u8 offset);
     void pipelineLoadSpriteTile();

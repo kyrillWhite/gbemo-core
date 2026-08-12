@@ -61,8 +61,15 @@ int Cartridge::readRomFile(const char *filename)
         printf("ROM is %u KiB, only the first %u KiB are kept\n\n", romSize / KIB, MAX_ROM_SIZE / KIB);
         romSize = MAX_ROM_SIZE;
     }
+    if (romSize < 0x0150)
+    {
+        printf("ROM is %u bytes, too short to hold a header\n\n", romSize);
+        fclose(filp);
+        return -1;
+    }
     rewind(filp);
 
+    romData.assign(romSize, 0);
     fread(romData.data(), sizeof(u8), romSize, filp);
     fclose(filp);
 
@@ -108,14 +115,42 @@ int Cartridge::initMemory(const char *filename)
         memory = &memoryStorage.emplace<MBC2>(romSize, romData.data(), &battery.value());
         break;
     case CartridgeType::MBC3:
-        memory = &memoryStorage.emplace<MBC1>(romSize, romData.data());
+        memory = &memoryStorage.emplace<MBC3>(romSize, romData.data());
         break;
     case CartridgeType::MBC3_RAM_10:
-        memory = &memoryStorage.emplace<MBC1>(romSize, romData.data(), ramSize);
+        memory = &memoryStorage.emplace<MBC3>(romSize, romData.data(), ramSize);
         break;
     case CartridgeType::MBC3_RAM_BATTERY_10:
         battery.emplace(filename);
-        memory = &memoryStorage.emplace<MBC1>(romSize, romData.data(), ramSize, &battery.value());
+        memory = &memoryStorage.emplace<MBC3>(romSize, romData.data(), ramSize, &battery.value());
+        break;
+    case CartridgeType::MBC3_TIMER_BATTERY:
+        battery.emplace(filename);
+        memory = &memoryStorage.emplace<MBC3>(romSize, romData.data(), 0, &battery.value(), true);
+        break;
+    case CartridgeType::MBC3_TIMER_RAM_BATTERY_10:
+        battery.emplace(filename);
+        memory = &memoryStorage.emplace<MBC3>(romSize, romData.data(), ramSize, &battery.value(), true);
+        break;
+    case CartridgeType::MBC5:
+        memory = &memoryStorage.emplace<MBC5>(romSize, romData.data());
+        break;
+    case CartridgeType::MBC5_RAM:
+        memory = &memoryStorage.emplace<MBC5>(romSize, romData.data(), ramSize);
+        break;
+    case CartridgeType::MBC5_RAM_BATTERY:
+        battery.emplace(filename);
+        memory = &memoryStorage.emplace<MBC5>(romSize, romData.data(), ramSize, &battery.value());
+        break;
+    case CartridgeType::MBC5_RUMBLE:
+        memory = &memoryStorage.emplace<MBC5>(romSize, romData.data(), 0, nullptr, true);
+        break;
+    case CartridgeType::MBC5_RUMBLE_RAM:
+        memory = &memoryStorage.emplace<MBC5>(romSize, romData.data(), ramSize, nullptr, true);
+        break;
+    case CartridgeType::MBC5_RUMBLE_RAM_BATTERY:
+        battery.emplace(filename);
+        memory = &memoryStorage.emplace<MBC5>(romSize, romData.data(), ramSize, &battery.value(), true);
         break;
     default:
         printf("Cartridge with type \"%s\" is not supported\n\n", getCartridgeTypeName(header->cartridgeType));

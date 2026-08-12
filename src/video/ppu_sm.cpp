@@ -3,27 +3,15 @@
 
 void PpuStateMachine::incrementLy()
 {
+    // The window's own line counter only moves on lines the window was drawn
+    // on, which is what makes it survive a mid-frame WY change.
     if (ppu->windowVisible() && lcd->registers.ly >= lcd->registers.windowY &&
-        lcd->registers.ly < lcd->registers.windowY + YRES)
+        lcd->registers.ly < YRES)
     {
         ppu->windowLine++;
     }
 
     lcd->registers.ly++;
-
-    if (lcd->registers.ly == lcd->registers.lyCompare)
-    {
-        lcd->lycSet(1);
-
-        if (lcd->statInt(SS_LYC))
-        {
-            interrupts->setIFflag(LCD_, true);
-        }
-    }
-    else
-    {
-        lcd->lycSet(0);
-    }
 }
 
 PpuStateMachine::PpuStateMachine(
@@ -31,8 +19,48 @@ PpuStateMachine::PpuStateMachine(
     PPU *_ppu,
     Interrupts *_interrupts) : lcd(_lcd),
                                ppu(_ppu),
-                               interrupts(_interrupts)
+                               interrupts(_interrupts),
+                               statLine(false)
 {
+}
+
+void PpuStateMachine::updateStatLine()
+{
+    if (!lcd->enable())
+    {
+        statLine = false;
+        return;
+    }
+
+    bool coincidence = lcd->registers.ly == lcd->registers.lyCompare;
+    lcd->lycSet(coincidence);
+
+    bool line = (coincidence && lcd->statInt(SS_LYC));
+
+    if (!line)
+    {
+        switch (lcd->mode())
+        {
+        case HBLANK:
+            line = lcd->statInt(SS_HBLANK);
+            break;
+        case VBLANK:
+            line = lcd->statInt(SS_VBLANK);
+            break;
+        case OAM:
+            line = lcd->statInt(SS_OAM);
+            break;
+        default:
+            break;
+        }
+    }
+
+    if (line && !statLine)
+    {
+        interrupts->setIFflag(LCD_, true);
+    }
+
+    statLine = line;
 }
 
 void PpuStateMachine::oamMode()
@@ -66,11 +94,6 @@ void PpuStateMachine::xferMode()
         ppu->getFIFO()->reset();
 
         lcd->modeSet(HBLANK);
-
-        if (lcd->statInt(SS_HBLANK))
-        {
-            interrupts->setIFflag(LCD_, 1);
-        }
     }
 }
 
@@ -101,11 +124,6 @@ void PpuStateMachine::hblankMode()
             lcd->modeSet(VBLANK);
 
             interrupts->setIFflag(VBlank, 1);
-
-            if (lcd->statInt(SS_VBLANK))
-            {
-                interrupts->setIFflag(LCD_, 1);
-            }
 
             ppu->currentFrame++;
         }

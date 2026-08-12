@@ -29,6 +29,13 @@ u16 LCD::read(u16 address)
 {
     u8 offset = (address - 0xFF40);
     u8 *p = (u8 *)&registers;
+
+    // STAT's top bit reads back as one on hardware
+    if (offset == 1)
+    {
+        return registers.lcds | 0x80;
+    }
+
     return p[offset];
 }
 
@@ -36,6 +43,24 @@ void LCD::write(u16 address, u8 value)
 {
     u8 offset = (address - 0xFF40);
     u8 *p = (u8 *)&registers;
+
+    // The low three bits of STAT are the PPU's own status - mode and the LYC
+    // match - and are read-only. Letting a game that only wants to arm an
+    // interrupt source write them puts the state machine into whatever mode
+    // the write happened to contain.
+    if (offset == 1)
+    {
+        registers.lcds = (value & 0xF8) | (registers.lcds & 0x07);
+        return;
+    }
+
+    // LY is read-only too; a write clears it on hardware, but never to the
+    // value written.
+    if (offset == 4)
+    {
+        return;
+    }
+
     p[offset] = value;
 
     if (offset == 6)

@@ -8,9 +8,16 @@ MBC2::MBC2(u32 _romSize, const u8 *_romData, BatteryRam *_battery) : CartridgeMe
                                                                      battery(_battery)
 {
     ramData.fill(0x0F);
-    if (battery && battery->isSaveExist())
+    if (battery)
     {
-        battery->load(ramData.data(), MBC2_MAX_RAM_SIZE);
+        if (battery->isSaveExist())
+        {
+            battery->load(ramData.data(), MBC2_MAX_RAM_SIZE);
+        }
+        else
+        {
+            battery->save(ramData.data(), MBC2_MAX_RAM_SIZE);
+        }
     }
 }
 
@@ -77,7 +84,7 @@ void MBC2::write(u16 address, u8 value)
         ramData[offs] = value & 0x0F;
         if (battery)
         {
-            battery->save(ramData.data(), MBC2_MAX_RAM_SIZE);
+            battery->saveByte(offs, ramData[offs]);
         }
     }
     else if (address >= 0xA200 && address <= 0xBFFF)
@@ -88,7 +95,7 @@ void MBC2::write(u16 address, u8 value)
         ramData[offs] = value & 0x0F;
         if (battery)
         {
-            battery->save(ramData.data(), MBC2_MAX_RAM_SIZE);
+            battery->saveByte(offs, ramData[offs]);
         }
     }
 }
