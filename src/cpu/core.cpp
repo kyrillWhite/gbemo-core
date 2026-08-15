@@ -1,13 +1,13 @@
 #include "cpu/core.h"
 
-Core::Core(Bus *bus, Interrupts *_interrupts, bool skipBoot) : registerFile(skipBoot),
-                                                               idu(),
-                                                               alu(&registerFile),
-                                                               controlUnit(bus, &registerFile, &idu, &alu, _interrupts)
+Core::Core(Bus *bus, Interrupts *_interrupts, Peripherals *_peripherals, bool skipBoot) : registerFile(skipBoot),
+                                                                                          idu(),
+                                                                                          alu(&registerFile),
+                                                                                          controlUnit(bus, &registerFile, &idu, &alu, _interrupts, _peripherals)
 {
 }
 
-void Core::tick()
+u8 Core::step()
 {
-    controlUnit.executeInstruction();
+    return controlUnit.step();
 }

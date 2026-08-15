@@ -1,6 +1,35 @@
 #include "cpu/control_unit.h"
 #include <cstdint>
 
+u8 ControlUnit::read(u16 address)
+{
+    peripherals->openCycle();
+    bus->setAddress(address);
+    u8 value = bus->readMemory();
+    peripherals->closeCycle();
+
+    mCycles++;
+    return value;
+}
+
+void ControlUnit::write(u16 address, u8 value)
+{
+    peripherals->openCycle();
+    bus->setAddress(address);
+    bus->writeMemory(value);
+    peripherals->closeCycle();
+
+    mCycles++;
+}
+
+void ControlUnit::idle()
+{
+    peripherals->openCycle();
+    peripherals->closeCycle();
+
+    mCycles++;
+}
+
 void ControlUnit::incrementPC()
 {
     registerFile->setPC(idu->increment(registerFile->getPC()));
@@ -9,50 +38,37 @@ void ControlUnit::incrementPC()
 void ControlUnit::M1()
 {
     auto rf = registerFile;
-    bus->setAddress(rf->getPC());
-    rf->setIR(bus->readMemory());
+    rf->setIR(read(rf->getPC()));
     incrementPC();
-    instructionCycle = 0;
-    isCbInstruction = false;
 }
 
 void ControlUnit::handleInterrupt()
 {
     auto rf = registerFile;
-    if (instructionCycle == 0)
-    {
-        bus->setAddress(rf->getPC());
-        rf->setPC(idu->decrement(rf->getPC()));
-        instructionCycle++;
-    }
-    else if (instructionCycle == 1)
-    {
-        bus->setAddress(rf->getSP());
-        rf->setSP(idu->decrement(rf->getSP()));
-        instructionCycle++;
-    }
-    else if (instructionCycle == 2)
-    {
-        bus->setAddress(rf->getSP());
-        bus->writeMemory(rf->getPCH());
-        rf->setSP(idu->decrement(rf->getSP()));
-        instructionCycle++;
-    }
-    else if (instructionCycle == 3)
-    {
-        bus->setAddress(rf->getSP());
-        bus->writeMemory(rf->getPCL());
-        rf->setPC(interruptCommand.address);
-        instructionCycle++;
-    }
-    else
-    {
-        M1();
-        interruptCommand.isHandling = false;
-        halted = false;
-        interrupts->setIFflag(interruptCommand.type, false);
-        IME = false;
-    }
+
+    idle();
+    rf->setPC(idu->decrement(rf->getPC()));
+
+    idle();
+    rf->setSP(idu->decrement(rf->getSP()));
+
+    write(rf->getSP(), rf->getPCH());
+    rf->setSP(idu->decrement(rf->getSP()));
+
+    write(rf->getSP(), rf->getPCL());
+    rf->setPC(interruptCommand.address);
+
+    peripherals->openCycle();
+    bus->setAddress(rf->getPC());
+    rf->setIR(bus->readMemory());
+    incrementPC();
+    interruptCommand.isHandling = false;
+    halted = false;
+    interrupts->setIFflag(interruptCommand.type, false);
+    IME = false;
+    peripherals->closeCycle();
+
+    mCycles++;
 }
 
 void ControlUnit::scrapInterrupts()
@@ -79,15 +95,15 @@ void ControlUnit::scrapInterrupts()
     }
 }
 
-void ControlUnit::printInstruction(Opcode opcode, bool fixCB)
+void ControlUnit::printInstruction(Opcode opcode)
 {
 #ifdef DEBUG
-    if (!instructionCycle && globalTicks % (PRINT_SKIP + 1) == 0)
+    if (globalTicks % (PRINT_SKIP + 1) == 0)
     {
         auto rf = registerFile;
         printf("Tick: %10I64u; %04X: %40s A: %02X F: %s%s%s%s BC: %04X DE: %04X HL: %04X\n",
                globalTicks,
-               fixCB ? currentPC - 2 : currentPC - 1,
+               currentPC - 1,
                getOpcodeName(opcode),
                rf->getA(),
                rf->getZflag() ? "Z" : "-",
@@ -107,10 +123,12 @@ ControlUnit::ControlUnit(
     RegisterFile *_registerFile,
     IDU *_idu,
     ALU *_alu,
-    Interrupts *_interrupts) : bus(_bus), registerFile(_registerFile), idu(_idu), alu(_alu), interrupts(_interrupts),
-                               instructionCycle(0), Z(0), W(0), Zsign(true), cCheck(false), currentPC(0),
-                               isCbInstruction(false), IME(false), halted(false), enablingIME(false),
-                               interruptCommand({InterruptType::VBlank, 0x40, false})
+    Interrupts *_interrupts,
+    Peripherals *_peripherals) : bus(_bus), registerFile(_registerFile), idu(_idu), alu(_alu), interrupts(_interrupts),
+                                 peripherals(_peripherals),
+                                 mCycles(0), Z(0), W(0), Zsign(true), currentPC(0),
+                                 IME(false), halted(false), enablingIME(false),
+                                 interruptCommand({InterruptType::VBlank, 0x40, false})
 {
 }
 
@@ -426,26 +444,23 @@ Opcode ControlUnit::decodeCbOpcode(u8 opcode)
     }
 }
 
-void ControlUnit::executeInstruction()
+u8 ControlUnit::step()
 {
-#ifdef DEBUG
-    if (registerFile->getPC() == 0xc2fc)
+    mCycles = 0;
+
+    // The scrape happens before EI's delayed IME takes effect, which is what
+    // gives EI its one-instruction grace: the interrupt it enables cannot be
+    // dispatched until the instruction after next.
+    if (IME)
     {
-        __asm nop
+        scrapInterrupts();
     }
-#endif // DEBUG
-    if (instructionCycle == 0)
+    if (enablingIME)
     {
-        if (IME)
-        {
-            scrapInterrupts();
-        }
-        if (enablingIME)
-        {
-            IME = true;
-            enablingIME = false;
-        }
+        IME = true;
+        enablingIME = false;
     }
+
     // HALT wakes on a pending *and enabled* interrupt - IE gates the wake-up
     // exactly as it gates the dispatch. Testing IF alone means a flag nobody
     // enabled, and which therefore nobody ever clears, leaves HALT unable to
@@ -455,28 +470,25 @@ void ControlUnit::executeInstruction()
     {
         halted = false;
     }
-    if (!interruptCommand.isHandling)
-    {
-        if (!halted)
-        {
-            if (instructionCycle == 0)
-            {
-                currentPC = registerFile->getPC();
-            }
-            if (isCbInstruction)
-            {
-                executeCbInstruction();
-            }
-            else
-            {
-                executeStdInstruction();
-            }
-        }
-    }
-    else
+
+    if (interruptCommand.isHandling)
     {
         handleInterrupt();
     }
+    else if (halted)
+    {
+        // Nothing to execute, but the machine still has to turn - and it has
+        // to turn one cycle at a time, or the wake-up above never gets looked
+        // at again.
+        idle();
+    }
+    else
+    {
+        currentPC = registerFile->getPC();
+        executeStdInstruction();
+    }
+
+    return mCycles;
 }
 
 void ControlUnit::executeStdInstruction()
@@ -506,498 +518,273 @@ void ControlUnit::executeStdInstruction()
     case Opcode::LoadRegister_Immediate:
     {
         // two cycle
-        if (instructionCycle == 0)
-        {
-            bus->setAddress(rf->getPC());
-            Z = bus->readMemory();
-            incrementPC();
-            instructionCycle++;
-        }
-        else
-        {
-            M1();
-            u8 toR8 = opcode >> 3 & 0b00000111;
-            alu->copyValToR8(toR8, Z);
-        }
+        Z = read(rf->getPC());
+        incrementPC();
+
+        M1();
+        u8 toR8 = opcode >> 3 & 0b00000111;
+        alu->copyValToR8(toR8, Z);
         break;
     }
     case Opcode::LoadRegister_IndirectHL:
     {
         // two cycle
-        if (instructionCycle == 0)
-        {
-            bus->setAddress(rf->getHL());
-            Z = bus->readMemory();
-            instructionCycle++;
-        }
-        else
-        {
-            M1();
-            u8 toR8 = opcode >> 3 & 0b00000111;
-            alu->copyValToR8(toR8, Z);
-        }
+        Z = read(rf->getHL());
+
+        M1();
+        u8 toR8 = opcode >> 3 & 0b00000111;
+        alu->copyValToR8(toR8, Z);
         break;
     }
     case Opcode::LoadFromRegister_IndirectHL:
     {
         // two cycle
-        if (instructionCycle == 0)
-        {
-            bus->setAddress(rf->getHL());
-            u8 codeR8 = opcode & 0b00000111;
-            u8 r8 = rf->getR8(codeR8);
-            bus->writeMemory(r8);
-            instructionCycle++;
-        }
-        else
-        {
-            M1();
-        }
+        u8 codeR8 = opcode & 0b00000111;
+        write(rf->getHL(), rf->getR8(codeR8));
+
+        M1();
         break;
     }
     case Opcode::LoadFromImmediateData_IndirectHL:
     {
         // three cycle
-        if (instructionCycle == 0)
-        {
-            bus->setAddress(rf->getPC());
-            Z = bus->readMemory();
-            incrementPC();
-            instructionCycle++;
-        }
-        else if (instructionCycle == 1)
-        {
-            bus->setAddress(rf->getHL());
-            bus->writeMemory(Z);
-            instructionCycle++;
-        }
-        else
-        {
-            M1();
-        }
+        Z = read(rf->getPC());
+        incrementPC();
+
+        write(rf->getHL(), Z);
+
+        M1();
         break;
     }
     case Opcode::LoadAccumulator_IndirectBC:
     {
         // two cycle
-        if (instructionCycle == 0)
-        {
-            bus->setAddress(rf->getBC());
-            Z = bus->readMemory();
-            instructionCycle++;
-        }
-        else
-        {
-            M1();
-            alu->copyValToR8(0b00000111, Z); // load to A register
-        }
+        Z = read(rf->getBC());
+
+        M1();
+        alu->copyValToR8(0b00000111, Z); // load to A register
         break;
     }
     case Opcode::LoadAccumulator_IndirectDE:
     {
         // two cycle
-        if (instructionCycle == 0)
-        {
-            bus->setAddress(rf->getDE());
-            Z = bus->readMemory();
-            instructionCycle++;
-        }
-        else
-        {
-            M1();
-            alu->copyValToR8(0b00000111, Z); // load to A register
-        }
+        Z = read(rf->getDE());
+
+        M1();
+        alu->copyValToR8(0b00000111, Z); // load to A register
         break;
     }
     case Opcode::LoadFromAccumulator_IndirectBC:
     {
         // two cycle
-        if (instructionCycle == 0)
-        {
-            bus->setAddress(rf->getBC());
-            bus->writeMemory(rf->getA());
-            instructionCycle++;
-        }
-        else
-        {
-            M1();
-        }
+        write(rf->getBC(), rf->getA());
+
+        M1();
         break;
     }
     case Opcode::LoadFromAccumulator_IndirectDE:
     {
         // two cycle
-        if (instructionCycle == 0)
-        {
-            bus->setAddress(rf->getDE());
-            bus->writeMemory(rf->getA());
-            instructionCycle++;
-        }
-        else
-        {
-            M1();
-        }
+        write(rf->getDE(), rf->getA());
+
+        M1();
         break;
     }
     case Opcode::LoadAccumulator_Direct:
     {
         // four cycle
-        if (instructionCycle == 0)
-        {
-            bus->setAddress(rf->getPC());
-            Z = bus->readMemory();
-            incrementPC();
-            instructionCycle++;
-        }
-        else if (instructionCycle == 1)
-        {
-            bus->setAddress(rf->getPC());
-            W = bus->readMemory();
-            incrementPC();
-            instructionCycle++;
-        }
-        else if (instructionCycle == 2)
-        {
-            bus->setAddress(getWZ());
-            Z = bus->readMemory();
-            instructionCycle++;
-        }
-        else
-        {
-            M1();
-            alu->copyValToR8(0b00000111, Z); // load to A register
-        }
+        Z = read(rf->getPC());
+        incrementPC();
+
+        W = read(rf->getPC());
+        incrementPC();
+
+        Z = read(getWZ());
+
+        M1();
+        alu->copyValToR8(0b00000111, Z); // load to A register
         break;
     }
     case Opcode::LoadFromAccumulator_Direct:
     {
         // four cycle
-        if (instructionCycle == 0)
-        {
-            bus->setAddress(rf->getPC());
-            Z = bus->readMemory();
-            incrementPC();
-            instructionCycle++;
-        }
-        else if (instructionCycle == 1)
-        {
-            bus->setAddress(rf->getPC());
-            W = bus->readMemory();
-            incrementPC();
-            instructionCycle++;
-        }
-        else if (instructionCycle == 2)
-        {
-            bus->setAddress(getWZ());
-            bus->writeMemory(rf->getA());
-            instructionCycle++;
-        }
-        else
-        {
-            M1();
-        }
+        Z = read(rf->getPC());
+        incrementPC();
+
+        W = read(rf->getPC());
+        incrementPC();
+
+        write(getWZ(), rf->getA());
+
+        M1();
         break;
     }
     case Opcode::LoadAccumulator_Indirect0xFF00_C:
     {
         // two cycle
-        if (instructionCycle == 0)
-        {
-            bus->setAddress(0xFF00 + rf->getC());
-            Z = bus->readMemory();
-            instructionCycle++;
-        }
-        else
-        {
-            M1();
-            alu->copyValToR8(0b00000111, Z); // load to A register
-        }
+        Z = read(0xFF00 + rf->getC());
+
+        M1();
+        alu->copyValToR8(0b00000111, Z); // load to A register
         break;
     }
     case Opcode::LoadFromAccumulator_Indirect0xFF00_C:
     {
         // two cycle
-        if (instructionCycle == 0)
-        {
-            bus->setAddress(0xFF00 + rf->getC());
-            bus->writeMemory(rf->getA());
-            instructionCycle++;
-        }
-        else
-        {
-            M1();
-        }
+        write(0xFF00 + rf->getC(), rf->getA());
+
+        M1();
         break;
     }
     case Opcode::LoadAccumulator_Indirect0xFF00_n:
     {
         // three cycle
-        if (instructionCycle == 0)
-        {
-            bus->setAddress(rf->getPC());
-            Z = bus->readMemory();
-            incrementPC();
-            instructionCycle++;
-        }
-        else if (instructionCycle == 1)
-        {
-            bus->setAddress(0xFF00 + Z);
-            Z = bus->readMemory();
-            instructionCycle++;
-        }
-        else
-        {
-            M1();
-            alu->copyValToR8(0b00000111, Z); // load to A register
-        }
+        Z = read(rf->getPC());
+        incrementPC();
+
+        Z = read(0xFF00 + Z);
+
+        M1();
+        alu->copyValToR8(0b00000111, Z); // load to A register
         break;
     }
     case Opcode::LoadFromAccumulator_Indirect0xFF00_n:
     {
         // three cycle
-        if (instructionCycle == 0)
-        {
-            bus->setAddress(rf->getPC());
-            Z = bus->readMemory();
-            incrementPC();
-            instructionCycle++;
-        }
-        else if (instructionCycle == 1)
-        {
-            bus->setAddress(0xFF00 + Z);
-            bus->writeMemory(rf->getA());
-            instructionCycle++;
-        }
-        else
-        {
-            M1();
-        }
+        Z = read(rf->getPC());
+        incrementPC();
+
+        write(0xFF00 + Z, rf->getA());
+
+        M1();
         break;
     }
     case Opcode::LoadAccumulator_IndirectHL_dec:
     {
         // two cycle
-        if (instructionCycle == 0)
-        {
-            bus->setAddress(rf->getHL());
-            Z = bus->readMemory();
-            rf->setHL(idu->decrement(rf->getHL()));
-            instructionCycle++;
-        }
-        else
-        {
-            M1();
-            alu->copyValToR8(0b00000111, Z); // load to A register
-        }
+        Z = read(rf->getHL());
+        rf->setHL(idu->decrement(rf->getHL()));
+
+        M1();
+        alu->copyValToR8(0b00000111, Z); // load to A register
         break;
     }
     case Opcode::LoadFromAccumulator_IndirectHL_dec:
     {
         // two cycle
-        if (instructionCycle == 0)
-        {
-            bus->setAddress(rf->getHL());
-            bus->writeMemory(rf->getA());
-            rf->setHL(idu->decrement(rf->getHL()));
-            instructionCycle++;
-        }
-        else
-        {
-            M1();
-        }
+        write(rf->getHL(), rf->getA());
+        rf->setHL(idu->decrement(rf->getHL()));
+
+        M1();
         break;
     }
     case Opcode::LoadAccumulator_IndirectHL_inc:
     {
         // two cycle
-        if (instructionCycle == 0)
-        {
-            bus->setAddress(rf->getHL());
-            Z = bus->readMemory();
-            rf->setHL(idu->increment(rf->getHL()));
-            instructionCycle++;
-        }
-        else
-        {
-            M1();
-            alu->copyValToR8(0b00000111, Z); // load to A register
-        }
+        Z = read(rf->getHL());
+        rf->setHL(idu->increment(rf->getHL()));
+
+        M1();
+        alu->copyValToR8(0b00000111, Z); // load to A register
         break;
     }
     case Opcode::LoadFromAccumulator_IndirectHL_inc:
     {
         // two cycle
-        if (instructionCycle == 0)
-        {
-            bus->setAddress(rf->getHL());
-            bus->writeMemory(rf->getA());
-            rf->setHL(idu->increment(rf->getHL()));
-            instructionCycle++;
-        }
-        else
-        {
-            M1();
-        }
+        write(rf->getHL(), rf->getA());
+        rf->setHL(idu->increment(rf->getHL()));
+
+        M1();
         break;
     }
     case Opcode::Load16bitRegisterOrRegisterPair:
     {
         // three cycle
-        if (instructionCycle == 0)
-        {
-            bus->setAddress(rf->getPC());
-            Z = bus->readMemory();
-            incrementPC();
-            instructionCycle++;
-        }
-        else if (instructionCycle == 1)
-        {
-            bus->setAddress(rf->getPC());
-            W = bus->readMemory();
-            incrementPC();
-            instructionCycle++;
-        }
-        else
-        {
-            M1();
-            u8 toR16 = opcode >> 4 & 0b00000011;
-            u16 wz = getWZ();
-            alu->copyValToR16(toR16, wz);
-        }
+        Z = read(rf->getPC());
+        incrementPC();
+
+        W = read(rf->getPC());
+        incrementPC();
+
+        M1();
+        u8 toR16 = opcode >> 4 & 0b00000011;
+        alu->copyValToR16(toR16, getWZ());
         break;
     }
     case Opcode::LoadFromStackPointer_Direct:
     {
         // five cycle
-        if (instructionCycle == 0)
-        {
-            bus->setAddress(rf->getPC());
-            Z = bus->readMemory();
-            incrementPC();
-            instructionCycle++;
-        }
-        else if (instructionCycle == 1)
-        {
-            bus->setAddress(rf->getPC());
-            W = bus->readMemory();
-            incrementPC();
-            instructionCycle++;
-        }
-        else if (instructionCycle == 2)
-        {
-            bus->setAddress(getWZ());
-            bus->writeMemory(rf->getSPL());
-            setWZ(idu->increment(getWZ()));
-            instructionCycle++;
-        }
-        else if (instructionCycle == 3)
-        {
-            bus->setAddress(getWZ());
-            bus->writeMemory(rf->getSPH());
-            instructionCycle++;
-        }
-        else
-        {
-            M1();
-        }
+        Z = read(rf->getPC());
+        incrementPC();
+
+        W = read(rf->getPC());
+        incrementPC();
+
+        write(getWZ(), rf->getSPL());
+        setWZ(idu->increment(getWZ()));
+
+        write(getWZ(), rf->getSPH());
+
+        M1();
         break;
     }
     case Opcode::LoadStackPointerFromHL:
     {
         // two cycle
-        if (instructionCycle == 0)
-        {
-            bus->setAddress(rf->getHL());
-            alu->copyR16ToR16(2, 3); // HL to SP
-            instructionCycle++;
-        }
-        else
-        {
-            M1();
-        }
+        idle();
+        alu->copyR16ToR16(2, 3); // HL to SP
+
+        M1();
         break;
     }
     case Opcode::PushToStack:
     {
         // four cycle
-        if (instructionCycle == 0)
-        {
-            bus->setAddress(rf->getSP());
-            rf->setSP(idu->decrement(rf->getSP()));
-            instructionCycle++;
-        }
-        else if (instructionCycle == 1)
-        {
-            bus->setAddress(rf->getSP());
-            u8 fromR16 = opcode >> 4 & 0b00000011;
-            u8 R16M = rf->getR16Mstk(fromR16);
-            bus->writeMemory(R16M);
-            rf->setSP(idu->decrement(rf->getSP()));
-            instructionCycle++;
-        }
-        else if (instructionCycle == 2)
-        {
-            bus->setAddress(rf->getSP());
-            u8 fromR16 = opcode >> 4 & 0b00000011;
-            u8 R16L = rf->getR16Lstk(fromR16);
-            bus->writeMemory(R16L);
-            instructionCycle++;
-        }
-        else
-        {
-            M1();
-        }
+        u8 fromR16 = opcode >> 4 & 0b00000011;
+
+        idle();
+        rf->setSP(idu->decrement(rf->getSP()));
+
+        write(rf->getSP(), rf->getR16Mstk(fromR16));
+        rf->setSP(idu->decrement(rf->getSP()));
+
+        write(rf->getSP(), rf->getR16Lstk(fromR16));
+
+        M1();
         break;
     }
     case Opcode::PopFromStack:
     {
         // three cycle
-        if (instructionCycle == 0)
-        {
-            bus->setAddress(rf->getSP());
-            Z = bus->readMemory();
-            rf->setSP(idu->increment(rf->getSP()));
-            instructionCycle++;
-        }
-        else if (instructionCycle == 1)
-        {
-            bus->setAddress(rf->getSP());
-            W = bus->readMemory();
-            rf->setSP(idu->increment(rf->getSP()));
-            instructionCycle++;
-        }
-        else
-        {
-            M1();
-            u8 toR16 = opcode >> 4 & 0b00000011;
-            rf->setR16stk(toR16, getWZ());
-        }
+        Z = read(rf->getSP());
+        rf->setSP(idu->increment(rf->getSP()));
+
+        W = read(rf->getSP());
+        rf->setSP(idu->increment(rf->getSP()));
+
+        M1();
+        u8 toR16 = opcode >> 4 & 0b00000011;
+        rf->setR16stk(toR16, getWZ());
         break;
     }
     case Opcode::LoadHLFromAdjustedStackPointer:
     {
         // three cycle
-        if (instructionCycle == 0)
+        Z = read(rf->getPC());
+        incrementPC();
+
+        idle();
         {
-            bus->setAddress(rf->getPC());
-            Z = bus->readMemory();
-            incrementPC();
-            instructionCycle++;
-        }
-        else if (instructionCycle == 1)
-        {
-            bus->setAddress(0x0000);
             u8 carryPerBit = 0;
             rf->setL(alu->add(rf->getSPL(), Z, carryPerBit));
             u8 Hflag = (carryPerBit & 0b00001000) << 2;
             u8 Cflag = (carryPerBit & 0b10000000) >> 3;
             rf->setF(Hflag | Cflag);
             Zsign = bit(Z, 7);
-            instructionCycle++;
         }
-        else
+
+        M1();
         {
-            M1();
             u8 adj = Zsign ? 0xFF : 0x00;
             u8 carryPerBit = 0;
             rf->setH(alu->add(rf->getSPH(), adj, carryPerBit, rf->getCflag()));
@@ -1021,46 +808,32 @@ void ControlUnit::executeStdInstruction()
     case Opcode::Add_IndirectHL:
     {
         // two cycle
-        if (instructionCycle == 0)
-        {
-            bus->setAddress(rf->getHL());
-            Z = bus->readMemory();
-            instructionCycle++;
-        }
-        else
-        {
-            M1();
-            u8 carryPerBit;
-            u8 result = alu->add(rf->getA(), Z, carryPerBit);
-            rf->setA(result);
-            rf->setZflag(result == 0);
-            rf->setNflag(false);
-            rf->setHflag(bit(carryPerBit, 3));
-            rf->setCflag(bit(carryPerBit, 7));
-        }
+        Z = read(rf->getHL());
+
+        M1();
+        u8 carryPerBit;
+        u8 result = alu->add(rf->getA(), Z, carryPerBit);
+        rf->setA(result);
+        rf->setZflag(result == 0);
+        rf->setNflag(false);
+        rf->setHflag(bit(carryPerBit, 3));
+        rf->setCflag(bit(carryPerBit, 7));
         break;
     }
     case Opcode::Add_Immediate:
     {
         // two cycle
-        if (instructionCycle == 0)
-        {
-            bus->setAddress(rf->getPC());
-            Z = bus->readMemory();
-            incrementPC();
-            instructionCycle++;
-        }
-        else
-        {
-            M1();
-            u8 carryPerBit;
-            u8 result = alu->add(rf->getA(), Z, carryPerBit);
-            rf->setA(result);
-            rf->setZflag(result == 0);
-            rf->setNflag(false);
-            rf->setHflag(bit(carryPerBit, 3));
-            rf->setCflag(bit(carryPerBit, 7));
-        }
+        Z = read(rf->getPC());
+        incrementPC();
+
+        M1();
+        u8 carryPerBit;
+        u8 result = alu->add(rf->getA(), Z, carryPerBit);
+        rf->setA(result);
+        rf->setZflag(result == 0);
+        rf->setNflag(false);
+        rf->setHflag(bit(carryPerBit, 3));
+        rf->setCflag(bit(carryPerBit, 7));
         break;
     }
     case Opcode::AddWithCarry_Register:
@@ -1080,46 +853,32 @@ void ControlUnit::executeStdInstruction()
     case Opcode::AddWithCarry_IndirectHL:
     {
         // two cycle
-        if (instructionCycle == 0)
-        {
-            bus->setAddress(rf->getHL());
-            Z = bus->readMemory();
-            instructionCycle++;
-        }
-        else
-        {
-            M1();
-            u8 carryPerBit;
-            u8 result = alu->add(rf->getA(), Z, carryPerBit, rf->getCflag());
-            rf->setA(result);
-            rf->setZflag(result == 0);
-            rf->setNflag(false);
-            rf->setHflag(bit(carryPerBit, 3));
-            rf->setCflag(bit(carryPerBit, 7));
-        }
+        Z = read(rf->getHL());
+
+        M1();
+        u8 carryPerBit;
+        u8 result = alu->add(rf->getA(), Z, carryPerBit, rf->getCflag());
+        rf->setA(result);
+        rf->setZflag(result == 0);
+        rf->setNflag(false);
+        rf->setHflag(bit(carryPerBit, 3));
+        rf->setCflag(bit(carryPerBit, 7));
         break;
     }
     case Opcode::AddWithCarry_Immediate:
     {
         // two cycle
-        if (instructionCycle == 0)
-        {
-            bus->setAddress(rf->getPC());
-            Z = bus->readMemory();
-            incrementPC();
-            instructionCycle++;
-        }
-        else
-        {
-            M1();
-            u8 carryPerBit;
-            u8 result = alu->add(rf->getA(), Z, carryPerBit, rf->getCflag());
-            rf->setA(result);
-            rf->setZflag(result == 0);
-            rf->setNflag(false);
-            rf->setHflag(bit(carryPerBit, 3));
-            rf->setCflag(bit(carryPerBit, 7));
-        }
+        Z = read(rf->getPC());
+        incrementPC();
+
+        M1();
+        u8 carryPerBit;
+        u8 result = alu->add(rf->getA(), Z, carryPerBit, rf->getCflag());
+        rf->setA(result);
+        rf->setZflag(result == 0);
+        rf->setNflag(false);
+        rf->setHflag(bit(carryPerBit, 3));
+        rf->setCflag(bit(carryPerBit, 7));
         break;
     }
     case Opcode::Sub_Register:
@@ -1139,46 +898,32 @@ void ControlUnit::executeStdInstruction()
     case Opcode::Sub_IndirectHL:
     {
         // two cycle
-        if (instructionCycle == 0)
-        {
-            bus->setAddress(rf->getHL());
-            Z = bus->readMemory();
-            instructionCycle++;
-        }
-        else
-        {
-            M1();
-            u8 carryPerBit;
-            u8 result = alu->sub(rf->getA(), Z, carryPerBit);
-            rf->setA(result);
-            rf->setZflag(result == 0);
-            rf->setNflag(true);
-            rf->setHflag(bit(carryPerBit, 3));
-            rf->setCflag(bit(carryPerBit, 7));
-        }
+        Z = read(rf->getHL());
+
+        M1();
+        u8 carryPerBit;
+        u8 result = alu->sub(rf->getA(), Z, carryPerBit);
+        rf->setA(result);
+        rf->setZflag(result == 0);
+        rf->setNflag(true);
+        rf->setHflag(bit(carryPerBit, 3));
+        rf->setCflag(bit(carryPerBit, 7));
         break;
     }
     case Opcode::Sub_Immediate:
     {
         // two cycle
-        if (instructionCycle == 0)
-        {
-            bus->setAddress(rf->getPC());
-            Z = bus->readMemory();
-            incrementPC();
-            instructionCycle++;
-        }
-        else
-        {
-            M1();
-            u8 carryPerBit;
-            u8 result = alu->sub(rf->getA(), Z, carryPerBit);
-            rf->setA(result);
-            rf->setZflag(result == 0);
-            rf->setNflag(true);
-            rf->setHflag(bit(carryPerBit, 3));
-            rf->setCflag(bit(carryPerBit, 7));
-        }
+        Z = read(rf->getPC());
+        incrementPC();
+
+        M1();
+        u8 carryPerBit;
+        u8 result = alu->sub(rf->getA(), Z, carryPerBit);
+        rf->setA(result);
+        rf->setZflag(result == 0);
+        rf->setNflag(true);
+        rf->setHflag(bit(carryPerBit, 3));
+        rf->setCflag(bit(carryPerBit, 7));
         break;
     }
     case Opcode::SubWithCarry_Register:
@@ -1198,46 +943,32 @@ void ControlUnit::executeStdInstruction()
     case Opcode::SubWithCarry_IndirectHL:
     {
         // two cycle
-        if (instructionCycle == 0)
-        {
-            bus->setAddress(rf->getHL());
-            Z = bus->readMemory();
-            instructionCycle++;
-        }
-        else
-        {
-            M1();
-            u8 carryPerBit;
-            u8 result = alu->sub(rf->getA(), Z, carryPerBit, rf->getCflag());
-            rf->setA(result);
-            rf->setZflag(result == 0);
-            rf->setNflag(true);
-            rf->setHflag(bit(carryPerBit, 3));
-            rf->setCflag(bit(carryPerBit, 7));
-        }
+        Z = read(rf->getHL());
+
+        M1();
+        u8 carryPerBit;
+        u8 result = alu->sub(rf->getA(), Z, carryPerBit, rf->getCflag());
+        rf->setA(result);
+        rf->setZflag(result == 0);
+        rf->setNflag(true);
+        rf->setHflag(bit(carryPerBit, 3));
+        rf->setCflag(bit(carryPerBit, 7));
         break;
     }
     case Opcode::SubWithCarry_Immediate:
     {
         // two cycle
-        if (instructionCycle == 0)
-        {
-            bus->setAddress(rf->getPC());
-            Z = bus->readMemory();
-            incrementPC();
-            instructionCycle++;
-        }
-        else
-        {
-            M1();
-            u8 carryPerBit;
-            u8 result = alu->sub(rf->getA(), Z, carryPerBit, rf->getCflag());
-            rf->setA(result);
-            rf->setZflag(result == 0);
-            rf->setNflag(true);
-            rf->setHflag(bit(carryPerBit, 3));
-            rf->setCflag(bit(carryPerBit, 7));
-        }
+        Z = read(rf->getPC());
+        incrementPC();
+
+        M1();
+        u8 carryPerBit;
+        u8 result = alu->sub(rf->getA(), Z, carryPerBit, rf->getCflag());
+        rf->setA(result);
+        rf->setZflag(result == 0);
+        rf->setNflag(true);
+        rf->setHflag(bit(carryPerBit, 3));
+        rf->setCflag(bit(carryPerBit, 7));
         break;
     }
     case Opcode::Compare_Register:
@@ -1256,44 +987,30 @@ void ControlUnit::executeStdInstruction()
     case Opcode::Compare_IndirectHL:
     {
         // two cycle
-        if (instructionCycle == 0)
-        {
-            bus->setAddress(rf->getHL());
-            Z = bus->readMemory();
-            instructionCycle++;
-        }
-        else
-        {
-            M1();
-            u8 carryPerBit;
-            u8 result = alu->sub(rf->getA(), Z, carryPerBit);
-            rf->setZflag(result == 0);
-            rf->setNflag(true);
-            rf->setHflag(bit(carryPerBit, 3));
-            rf->setCflag(bit(carryPerBit, 7));
-        }
+        Z = read(rf->getHL());
+
+        M1();
+        u8 carryPerBit;
+        u8 result = alu->sub(rf->getA(), Z, carryPerBit);
+        rf->setZflag(result == 0);
+        rf->setNflag(true);
+        rf->setHflag(bit(carryPerBit, 3));
+        rf->setCflag(bit(carryPerBit, 7));
         break;
     }
     case Opcode::Compare_Immediate:
     {
         // two cycle
-        if (instructionCycle == 0)
-        {
-            bus->setAddress(rf->getPC());
-            Z = bus->readMemory();
-            incrementPC();
-            instructionCycle++;
-        }
-        else
-        {
-            M1();
-            u8 carryPerBit;
-            u8 result = alu->sub(rf->getA(), Z, carryPerBit);
-            rf->setZflag(result == 0);
-            rf->setNflag(true);
-            rf->setHflag(bit(carryPerBit, 3));
-            rf->setCflag(bit(carryPerBit, 7));
-        }
+        Z = read(rf->getPC());
+        incrementPC();
+
+        M1();
+        u8 carryPerBit;
+        u8 result = alu->sub(rf->getA(), Z, carryPerBit);
+        rf->setZflag(result == 0);
+        rf->setNflag(true);
+        rf->setHflag(bit(carryPerBit, 3));
+        rf->setCflag(bit(carryPerBit, 7));
         break;
     }
     case Opcode::Increment_Register:
@@ -1312,27 +1029,18 @@ void ControlUnit::executeStdInstruction()
     case Opcode::Increment_IndirectHL:
     {
         // three cycle
-        if (instructionCycle == 0)
+        Z = read(rf->getHL());
+
         {
-            bus->setAddress(rf->getHL());
-            Z = bus->readMemory();
-            instructionCycle++;
-        }
-        else if (instructionCycle == 1)
-        {
-            bus->setAddress(rf->getHL());
             u8 carryPerBit;
             u8 result = alu->add(Z, 1, carryPerBit);
-            bus->writeMemory(result);
+            write(rf->getHL(), result);
             rf->setZflag(result == 0);
             rf->setNflag(false);
             rf->setHflag(bit(carryPerBit, 3));
-            instructionCycle++;
         }
-        else
-        {
-            M1();
-        }
+
+        M1();
         break;
     }
     case Opcode::Decrement_Register:
@@ -1351,27 +1059,18 @@ void ControlUnit::executeStdInstruction()
     case Opcode::Decrement_IndirectHL:
     {
         // three cycle
-        if (instructionCycle == 0)
+        Z = read(rf->getHL());
+
         {
-            bus->setAddress(rf->getHL());
-            Z = bus->readMemory();
-            instructionCycle++;
-        }
-        else if (instructionCycle == 1)
-        {
-            bus->setAddress(rf->getHL());
             u8 carryPerBit;
             u8 result = alu->sub(Z, 1, carryPerBit);
-            bus->writeMemory(result);
+            write(rf->getHL(), result);
             rf->setZflag(result == 0);
             rf->setNflag(true);
             rf->setHflag(bit(carryPerBit, 3));
-            instructionCycle++;
         }
-        else
-        {
-            M1();
-        }
+
+        M1();
         break;
     }
     case Opcode::And_Register:
@@ -1390,44 +1089,30 @@ void ControlUnit::executeStdInstruction()
     case Opcode::And_IndirectHL:
     {
         // two cycle
-        if (instructionCycle == 0)
-        {
-            bus->setAddress(rf->getHL());
-            Z = bus->readMemory();
-            instructionCycle++;
-        }
-        else
-        {
-            M1();
-            u8 result = alu->_and(rf->getA(), Z);
-            rf->setA(result);
-            rf->setZflag(result == 0);
-            rf->setNflag(false);
-            rf->setHflag(true);
-            rf->setCflag(false);
-        }
+        Z = read(rf->getHL());
+
+        M1();
+        u8 result = alu->_and(rf->getA(), Z);
+        rf->setA(result);
+        rf->setZflag(result == 0);
+        rf->setNflag(false);
+        rf->setHflag(true);
+        rf->setCflag(false);
         break;
     }
     case Opcode::And_Immediate:
     {
         // two cycle
-        if (instructionCycle == 0)
-        {
-            bus->setAddress(rf->getPC());
-            Z = bus->readMemory();
-            incrementPC();
-            instructionCycle++;
-        }
-        else
-        {
-            M1();
-            u8 result = alu->_and(rf->getA(), Z);
-            rf->setA(result);
-            rf->setZflag(result == 0);
-            rf->setNflag(false);
-            rf->setHflag(true);
-            rf->setCflag(false);
-        }
+        Z = read(rf->getPC());
+        incrementPC();
+
+        M1();
+        u8 result = alu->_and(rf->getA(), Z);
+        rf->setA(result);
+        rf->setZflag(result == 0);
+        rf->setNflag(false);
+        rf->setHflag(true);
+        rf->setCflag(false);
         break;
     }
     case Opcode::Or_Register:
@@ -1446,44 +1131,30 @@ void ControlUnit::executeStdInstruction()
     case Opcode::Or_IndirectHL:
     {
         // two cycle
-        if (instructionCycle == 0)
-        {
-            bus->setAddress(rf->getHL());
-            Z = bus->readMemory();
-            instructionCycle++;
-        }
-        else
-        {
-            M1();
-            u8 result = alu->_or(rf->getA(), Z);
-            rf->setA(result);
-            rf->setZflag(result == 0);
-            rf->setNflag(false);
-            rf->setHflag(false);
-            rf->setCflag(false);
-        }
+        Z = read(rf->getHL());
+
+        M1();
+        u8 result = alu->_or(rf->getA(), Z);
+        rf->setA(result);
+        rf->setZflag(result == 0);
+        rf->setNflag(false);
+        rf->setHflag(false);
+        rf->setCflag(false);
         break;
     }
     case Opcode::Or_Immediate:
     {
         // two cycle
-        if (instructionCycle == 0)
-        {
-            bus->setAddress(rf->getPC());
-            Z = bus->readMemory();
-            incrementPC();
-            instructionCycle++;
-        }
-        else
-        {
-            M1();
-            u8 result = alu->_or(rf->getA(), Z);
-            rf->setA(result);
-            rf->setZflag(result == 0);
-            rf->setNflag(false);
-            rf->setHflag(false);
-            rf->setCflag(false);
-        }
+        Z = read(rf->getPC());
+        incrementPC();
+
+        M1();
+        u8 result = alu->_or(rf->getA(), Z);
+        rf->setA(result);
+        rf->setZflag(result == 0);
+        rf->setNflag(false);
+        rf->setHflag(false);
+        rf->setCflag(false);
         break;
     }
     case Opcode::Xor_Register:
@@ -1502,44 +1173,30 @@ void ControlUnit::executeStdInstruction()
     case Opcode::Xor_IndirectHL:
     {
         // two cycle
-        if (instructionCycle == 0)
-        {
-            bus->setAddress(rf->getHL());
-            Z = bus->readMemory();
-            instructionCycle++;
-        }
-        else
-        {
-            M1();
-            u8 result = alu->_xor(rf->getA(), Z);
-            rf->setA(result);
-            rf->setZflag(result == 0);
-            rf->setNflag(false);
-            rf->setHflag(false);
-            rf->setCflag(false);
-        }
+        Z = read(rf->getHL());
+
+        M1();
+        u8 result = alu->_xor(rf->getA(), Z);
+        rf->setA(result);
+        rf->setZflag(result == 0);
+        rf->setNflag(false);
+        rf->setHflag(false);
+        rf->setCflag(false);
         break;
     }
     case Opcode::Xor_Immediate:
     {
         // two cycle
-        if (instructionCycle == 0)
-        {
-            bus->setAddress(rf->getPC());
-            Z = bus->readMemory();
-            incrementPC();
-            instructionCycle++;
-        }
-        else
-        {
-            M1();
-            u8 result = alu->_xor(rf->getA(), Z);
-            rf->setA(result);
-            rf->setZflag(result == 0);
-            rf->setNflag(false);
-            rf->setHflag(false);
-            rf->setCflag(false);
-        }
+        Z = read(rf->getPC());
+        incrementPC();
+
+        M1();
+        u8 result = alu->_xor(rf->getA(), Z);
+        rf->setA(result);
+        rf->setZflag(result == 0);
+        rf->setNflag(false);
+        rf->setHflag(false);
+        rf->setCflag(false);
         break;
     }
     case Opcode::ComplementCarryFlag:
@@ -1580,52 +1237,44 @@ void ControlUnit::executeStdInstruction()
     case Opcode::Increment16bitRegister:
     {
         // two cycle
-        if (instructionCycle == 0)
+        idle();
         {
             u8 toR16 = opcode >> 4 & 0b00000011;
             rf->setR16(toR16, idu->increment(rf->getR16(toR16)));
-            instructionCycle++;
         }
-        else
-        {
-            M1();
-        }
+
+        M1();
         break;
     }
     case Opcode::Decrement16bitRegister:
     {
         // two cycle
-        if (instructionCycle == 0)
+        idle();
         {
             u8 toR16 = opcode >> 4 & 0b00000011;
             rf->setR16(toR16, idu->decrement(rf->getR16(toR16)));
-            instructionCycle++;
         }
-        else
-        {
-            M1();
-        }
+
+        M1();
         break;
     }
     case Opcode::Add_16bitRegister:
     {
         // two cycle
-        if (instructionCycle == 0)
+        u8 R16code = opcode >> 4 & 0b00000011;
+
+        idle();
         {
-            bus->setAddress(0);
-            u8 R16code = opcode >> 4 & 0b00000011;
             u8 lsb = rf->getR16L(R16code);
             u8 carryPerBit;
             rf->setL(alu->add(rf->getL(), lsb, carryPerBit));
             rf->setNflag(false);
             rf->setHflag(bit(carryPerBit, 3));
             rf->setCflag(bit(carryPerBit, 7));
-            instructionCycle++;
         }
-        else
+
+        M1();
         {
-            M1();
-            u8 R16code = opcode >> 4 & 0b00000011;
             u8 hsb = rf->getR16M(R16code);
             u8 carryPerBit;
             rf->setH(alu->add(rf->getH(), hsb, carryPerBit, rf->getCflag()));
@@ -1638,48 +1287,23 @@ void ControlUnit::executeStdInstruction()
     case Opcode::AddToStackPointer_relative:
     {
         // four cycle
-        if (instructionCycle == 0)
-        {
-            bus->setAddress(rf->getPC());
-            Z = bus->readMemory();
-            incrementPC();
-            instructionCycle++;
-        }
-        else if (instructionCycle == 1)
-        {
-            // bus->setAddress(0);
-            // u8 carryPerBit;
-            // Z = alu->add(rf->getSPL(), Z, carryPerBit);
-            // Zsign = bit(7, Z);
-            // rf->setZflag(false);
-            // rf->setNflag(false);
-            // rf->setHflag(bit(carryPerBit, 3));
-            // rf->setCflag(bit(carryPerBit, 7));
-            instructionCycle++;
-        }
-        else if (instructionCycle == 2)
-        {
-            // bus->setAddress(0);
-            // u8 adj = Zsign ? 0xFF : 0x00;
-            // u8 carryPerBit;
-            // W = alu->add(rf->getSPH(), adj, carryPerBit, rf->getCflag());
-            instructionCycle++;
-        }
-        else
-        {
-            M1();
-            int8_t offset = static_cast<int8_t>(Z);
-            u16 sp = rf->getSP();
-            u16 result = sp + offset;
-            bool halfCarry = (((sp & 0xF) + (offset & 0xF)) > 0xF);
-            bool fullCarry = (((sp & 0xFF) + (offset & 0xFF)) > 0xFF);
-            rf->setHflag(halfCarry);
-            rf->setCflag(fullCarry);
-            rf->setZflag(false);
-            rf->setNflag(false);
-            rf->setSP(result);
-            instructionCycle = 0;
-        }
+        Z = read(rf->getPC());
+        incrementPC();
+
+        idle();
+        idle();
+
+        M1();
+        int8_t offset = static_cast<int8_t>(Z);
+        u16 sp = rf->getSP();
+        u16 result = sp + offset;
+        bool halfCarry = (((sp & 0xF) + (offset & 0xF)) > 0xF);
+        bool fullCarry = (((sp & 0xFF) + (offset & 0xFF)) > 0xFF);
+        rf->setHflag(halfCarry);
+        rf->setCflag(fullCarry);
+        rf->setZflag(false);
+        rf->setNflag(false);
+        rf->setSP(result);
         break;
     }
     case Opcode::RotateLeftCircular_Accumulator:
@@ -1733,373 +1357,199 @@ void ControlUnit::executeStdInstruction()
     case Opcode::Jump:
     {
         // four cycle
-        if (instructionCycle == 0)
-        {
-            bus->setAddress(rf->getPC());
-            Z = bus->readMemory();
-            incrementPC();
-            instructionCycle++;
-        }
-        else if (instructionCycle == 1)
-        {
-            bus->setAddress(rf->getPC());
-            W = bus->readMemory();
-            incrementPC();
-            instructionCycle++;
-        }
-        else if (instructionCycle == 2)
-        {
-            bus->setAddress(0);
-            rf->setPC(getWZ());
-            instructionCycle++;
-        }
-        else
-        {
-            M1();
-        }
+        Z = read(rf->getPC());
+        incrementPC();
+
+        W = read(rf->getPC());
+        incrementPC();
+
+        idle();
+        rf->setPC(getWZ());
+
+        M1();
         break;
     }
     case Opcode::JumpToHL:
     {
-        // one cycle
-        bus->setAddress(rf->getHL());
-        rf->setIR(bus->readMemory());
+        // one cycle - the fetch goes straight to HL, so there is no separate
+        // M1 to pay for
+        rf->setIR(read(rf->getHL()));
         rf->setPC(idu->increment(rf->getHL()));
         break;
     }
     case Opcode::Jump_Conditional:
     {
-        // four cycle
-        if (instructionCycle == 0)
-        {
-            bus->setAddress(rf->getPC());
-            Z = bus->readMemory();
-            incrementPC();
-            instructionCycle++;
-        }
-        else if (instructionCycle == 1)
-        {
-            bus->setAddress(rf->getPC());
-            W = bus->readMemory();
-            incrementPC();
-            cCheck = rf->checkConditional(opcode >> 3 & 0b00000011);
-            instructionCycle++;
-        }
-        else if (instructionCycle == 2)
-        {
-            if (!cCheck)
-            {
-                M1();
-                break;
-            }
-            bus->setAddress(0);
-            rf->setPC(getWZ());
-            instructionCycle++;
-        }
-        else
+        // four cycle taken, three not
+        Z = read(rf->getPC());
+        incrementPC();
+
+        W = read(rf->getPC());
+        incrementPC();
+        bool cCheck = rf->checkConditional(opcode >> 3 & 0b00000011);
+
+        if (!cCheck)
         {
             M1();
+            break;
         }
+
+        idle();
+        rf->setPC(getWZ());
+
+        M1();
         break;
     }
     case Opcode::RelativeJump:
     {
         // three cycle
-        if (instructionCycle == 0)
-        {
-            bus->setAddress(rf->getPC());
-            Z = bus->readMemory();
-            incrementPC();
-            instructionCycle++;
-        }
-        else if (instructionCycle == 1)
-        {
-            bus->setAddress(rf->getPC());
-            /*bool Z_sign = bit(Z, 7);
-            u8 carryPerBit;
-            Z = alu->add(Z, rf->getPCL(), carryPerBit);
-            char adj = 0;
-            if (bit(carryPerBit, 7) && !Z_sign) {
-                adj = 1;
-            }
-            else if (!bit(carryPerBit, 7) && Z_sign) {
-                adj = -1;
-            }
-            W = rf->getPCH() + adj;*/
+        Z = read(rf->getPC());
+        incrementPC();
 
-            setWZ(rf->getPC() + static_cast<int8_t>(Z));
-            instructionCycle++;
-        }
-        else
-        {
-            bus->setAddress(getWZ());
-            rf->setIR(bus->readMemory());
-            rf->setPC(idu->increment(getWZ()));
-            instructionCycle = 0;
-        }
+        idle();
+        setWZ(rf->getPC() + static_cast<int8_t>(Z));
+
+        rf->setIR(read(getWZ()));
+        rf->setPC(idu->increment(getWZ()));
         break;
     }
     case Opcode::RelativeJump_Conditional:
     {
-        // three cycle
-        if (instructionCycle == 0)
+        // three cycle taken, two not
+        Z = read(rf->getPC());
+        incrementPC();
+        bool cCheck = rf->checkConditional(opcode >> 3 & 0b00000011);
+
+        if (!cCheck)
         {
-            bus->setAddress(rf->getPC());
-            Z = bus->readMemory();
-            incrementPC();
-            cCheck = rf->checkConditional(opcode >> 3 & 0b00000011);
-            instructionCycle++;
+            M1();
+            break;
         }
-        else if (instructionCycle == 1)
-        {
-            if (!cCheck)
-            {
-                M1();
-                break;
-            }
-            /*bus->setAddress(rf->getPCH());
-            bool Z_sign = bit(Z, 7);
-            u8 carryPerBit;
-            Z = alu->add(Z, rf->getPCL(), carryPerBit);
-            char adj = 0;
-            if (bit(carryPerBit, 7) && !Z_sign) {
-                adj = 1;
-            }
-            else if (!bit(carryPerBit, 7) && Z_sign) {
-                adj = -1;
-            }
-            W = rf->getPCH() + adj;*/
-            setWZ(rf->getPC() + static_cast<int8_t>(Z));
-            instructionCycle++;
-        }
-        else
-        {
-            bus->setAddress(getWZ());
-            rf->setIR(bus->readMemory());
-            rf->setPC(idu->increment(getWZ()));
-            instructionCycle = 0;
-        }
+
+        idle();
+        setWZ(rf->getPC() + static_cast<int8_t>(Z));
+
+        rf->setIR(read(getWZ()));
+        rf->setPC(idu->increment(getWZ()));
         break;
     }
     case Opcode::CallFunction:
     {
         // six cycle
-        if (instructionCycle == 0)
-        {
-            bus->setAddress(rf->getPC());
-            Z = bus->readMemory();
-            incrementPC();
-            instructionCycle++;
-        }
-        else if (instructionCycle == 1)
-        {
-            bus->setAddress(rf->getPC());
-            W = bus->readMemory();
-            incrementPC();
-            instructionCycle++;
-        }
-        else if (instructionCycle == 2)
-        {
-            bus->setAddress(rf->getSP());
-            rf->setSP(idu->decrement(rf->getSP()));
-            instructionCycle++;
-        }
-        else if (instructionCycle == 3)
-        {
-            bus->setAddress(rf->getSP());
-            bus->writeMemory(rf->getPCH());
-            rf->setSP(idu->decrement(rf->getSP()));
-            instructionCycle++;
-        }
-        else if (instructionCycle == 4)
-        {
-            bus->setAddress(rf->getSP());
-            bus->writeMemory(rf->getPCL());
-            rf->setPC(getWZ());
-            instructionCycle++;
-        }
-        else
-        {
-            M1();
-        }
+        Z = read(rf->getPC());
+        incrementPC();
+
+        W = read(rf->getPC());
+        incrementPC();
+
+        idle();
+        rf->setSP(idu->decrement(rf->getSP()));
+
+        write(rf->getSP(), rf->getPCH());
+        rf->setSP(idu->decrement(rf->getSP()));
+
+        write(rf->getSP(), rf->getPCL());
+        rf->setPC(getWZ());
+
+        M1();
         break;
     }
     case Opcode::CallFunction_Conditional:
     {
-        // six cycle
-        if (instructionCycle == 0)
-        {
-            bus->setAddress(rf->getPC());
-            Z = bus->readMemory();
-            incrementPC();
-            instructionCycle++;
-        }
-        else if (instructionCycle == 1)
-        {
-            bus->setAddress(rf->getPC());
-            W = bus->readMemory();
-            incrementPC();
-            cCheck = rf->checkConditional(opcode >> 3 & 0b00000011);
-            instructionCycle++;
-        }
-        else if (instructionCycle == 2)
-        {
-            if (!cCheck)
-            {
-                M1();
-                break;
-            }
-            bus->setAddress(rf->getSP());
-            rf->setSP(idu->decrement(rf->getSP()));
-            instructionCycle++;
-        }
-        else if (instructionCycle == 3)
-        {
-            bus->setAddress(rf->getSP());
-            bus->writeMemory(rf->getPCH());
-            rf->setSP(idu->decrement(rf->getSP()));
-            instructionCycle++;
-        }
-        else if (instructionCycle == 4)
-        {
-            bus->setAddress(rf->getSP());
-            bus->writeMemory(rf->getPCL());
-            rf->setPC(getWZ());
-            instructionCycle++;
-        }
-        else
+        // six cycle taken, three not
+        Z = read(rf->getPC());
+        incrementPC();
+
+        W = read(rf->getPC());
+        incrementPC();
+        bool cCheck = rf->checkConditional(opcode >> 3 & 0b00000011);
+
+        if (!cCheck)
         {
             M1();
+            break;
         }
+
+        idle();
+        rf->setSP(idu->decrement(rf->getSP()));
+
+        write(rf->getSP(), rf->getPCH());
+        rf->setSP(idu->decrement(rf->getSP()));
+
+        write(rf->getSP(), rf->getPCL());
+        rf->setPC(getWZ());
+
+        M1();
         break;
     }
     case Opcode::ReturnFromFunction:
     {
         // four cycle
-        if (instructionCycle == 0)
-        {
-            bus->setAddress(rf->getSP());
-            Z = bus->readMemory();
-            rf->setSP(idu->increment(rf->getSP()));
-            instructionCycle++;
-        }
-        else if (instructionCycle == 1)
-        {
-            bus->setAddress(rf->getSP());
-            W = bus->readMemory();
-            rf->setSP(idu->increment(rf->getSP()));
-            instructionCycle++;
-        }
-        else if (instructionCycle == 2)
-        {
-            bus->setAddress(0);
-            rf->setPC(getWZ());
-            instructionCycle++;
-        }
-        else
-        {
-            M1();
-        }
+        Z = read(rf->getSP());
+        rf->setSP(idu->increment(rf->getSP()));
+
+        W = read(rf->getSP());
+        rf->setSP(idu->increment(rf->getSP()));
+
+        idle();
+        rf->setPC(getWZ());
+
+        M1();
         break;
     }
     case Opcode::ReturnFromFunction_Conditional:
     {
-        // five cycle
-        if (instructionCycle == 0)
-        {
-            bus->setAddress(0);
-            cCheck = rf->checkConditional(opcode >> 3 & 0b00000011);
-            instructionCycle++;
-        }
-        else if (instructionCycle == 1)
-        {
-            if (!cCheck)
-            {
-                M1();
-                break;
-            }
-            bus->setAddress(rf->getSP());
-            Z = bus->readMemory();
-            rf->setSP(idu->increment(rf->getSP()));
-            instructionCycle++;
-        }
-        else if (instructionCycle == 2)
-        {
-            bus->setAddress(rf->getSP());
-            W = bus->readMemory();
-            rf->setSP(idu->increment(rf->getSP()));
-            instructionCycle++;
-        }
-        else if (instructionCycle == 3)
-        {
-            bus->setAddress(0);
-            rf->setPC(getWZ());
-            instructionCycle++;
-        }
-        else
+        // five cycle taken, two not
+        idle();
+        bool cCheck = rf->checkConditional(opcode >> 3 & 0b00000011);
+
+        if (!cCheck)
         {
             M1();
+            break;
         }
+
+        Z = read(rf->getSP());
+        rf->setSP(idu->increment(rf->getSP()));
+
+        W = read(rf->getSP());
+        rf->setSP(idu->increment(rf->getSP()));
+
+        idle();
+        rf->setPC(getWZ());
+
+        M1();
         break;
     }
     case Opcode::ReturnFromInterruptHandler:
     {
         // four cycle
-        if (instructionCycle == 0)
-        {
-            bus->setAddress(rf->getSP());
-            Z = bus->readMemory();
-            rf->setSP(idu->increment(rf->getSP()));
-            instructionCycle++;
-        }
-        else if (instructionCycle == 1)
-        {
-            bus->setAddress(rf->getSP());
-            W = bus->readMemory();
-            rf->setSP(idu->increment(rf->getSP()));
-            instructionCycle++;
-        }
-        else if (instructionCycle == 2)
-        {
-            bus->setAddress(0);
-            rf->setPC(getWZ());
-            IME = true;
-            instructionCycle++;
-        }
-        else
-        {
-            M1();
-        }
+        Z = read(rf->getSP());
+        rf->setSP(idu->increment(rf->getSP()));
+
+        W = read(rf->getSP());
+        rf->setSP(idu->increment(rf->getSP()));
+
+        idle();
+        rf->setPC(getWZ());
+        IME = true;
+
+        M1();
         break;
     }
     case Opcode::Restart:
     {
-        // five cycle
-        if (instructionCycle == 0)
-        {
-            bus->setAddress(rf->getSP());
-            rf->setSP(idu->decrement(rf->getSP()));
-            instructionCycle++;
-        }
-        else if (instructionCycle == 1)
-        {
-            bus->setAddress(rf->getSP());
-            bus->writeMemory(rf->getPCH());
-            rf->setSP(idu->decrement(rf->getSP()));
-            instructionCycle++;
-        }
-        else if (instructionCycle == 2)
-        {
-            bus->setAddress(rf->getSP());
-            bus->writeMemory(rf->getPCL());
-            u16 address = opcode & 0b00111000; // 0b11xxx111, xxx - is address divided by 8
-            rf->setPC(address);
-            instructionCycle++;
-        }
-        else
-        {
-            M1();
-        }
+        // four cycle
+        idle();
+        rf->setSP(idu->decrement(rf->getSP()));
+
+        write(rf->getSP(), rf->getPCH());
+        rf->setSP(idu->decrement(rf->getSP()));
+
+        write(rf->getSP(), rf->getPCL());
+        // 0b11xxx111, xxx - is address divided by 8
+        rf->setPC(opcode & 0b00111000);
+
+        M1();
         break;
     }
     case Opcode::HaltSystemClock:
@@ -2149,7 +1599,7 @@ void ControlUnit::executeStdInstruction()
     case Opcode::CB:
     {
         M1();
-        isCbInstruction = true;
+        executeCbInstruction();
         break;
     }
 
@@ -2167,7 +1617,7 @@ void ControlUnit::executeCbInstruction()
 #ifdef DEBUG
     if (globalTicks > DEBUG_START)
     {
-        printInstruction(opcodeType, true);
+        printInstruction(opcodeType);
     }
 #endif // DEBUG
 
@@ -2190,28 +1640,19 @@ void ControlUnit::executeCbInstruction()
     case Opcode::RotateLeftCircular_IndirectHL:
     {
         // three cycle
-        if (instructionCycle == 0)
+        Z = read(rf->getHL());
+
         {
-            bus->setAddress(rf->getHL());
-            Z = bus->readMemory();
-            instructionCycle++;
-        }
-        else if (instructionCycle == 1)
-        {
-            bus->setAddress(rf->getHL());
             bool carry = rf->getCflag();
             u8 result = alu->rotateLeftCircular(Z, carry);
             rf->setZflag(result == 0);
             rf->setNflag(false);
             rf->setHflag(false);
             rf->setCflag(carry);
-            bus->writeMemory(result);
-            instructionCycle++;
+            write(rf->getHL(), result);
         }
-        else
-        {
-            M1();
-        }
+
+        M1();
         break;
     }
     case Opcode::RotateRightCircular_Register:
@@ -2231,28 +1672,19 @@ void ControlUnit::executeCbInstruction()
     case Opcode::RotateRightCircular_IndirectHL:
     {
         // three cycle
-        if (instructionCycle == 0)
+        Z = read(rf->getHL());
+
         {
-            bus->setAddress(rf->getHL());
-            Z = bus->readMemory();
-            instructionCycle++;
-        }
-        else if (instructionCycle == 1)
-        {
-            bus->setAddress(rf->getHL());
             bool carry = rf->getCflag();
             u8 result = alu->rotateRightCircular(Z, carry);
             rf->setZflag(result == 0);
             rf->setNflag(false);
             rf->setHflag(false);
             rf->setCflag(carry);
-            bus->writeMemory(result);
-            instructionCycle++;
+            write(rf->getHL(), result);
         }
-        else
-        {
-            M1();
-        }
+
+        M1();
         break;
     }
     case Opcode::RotateLeft_Register:
@@ -2272,28 +1704,19 @@ void ControlUnit::executeCbInstruction()
     case Opcode::RotateLeft_IndirectHL:
     {
         // three cycle
-        if (instructionCycle == 0)
+        Z = read(rf->getHL());
+
         {
-            bus->setAddress(rf->getHL());
-            Z = bus->readMemory();
-            instructionCycle++;
-        }
-        else if (instructionCycle == 1)
-        {
-            bus->setAddress(rf->getHL());
             bool carry = rf->getCflag();
             u8 result = alu->rotateLeft(Z, carry);
             rf->setZflag(result == 0);
             rf->setNflag(false);
             rf->setHflag(false);
             rf->setCflag(carry);
-            bus->writeMemory(result);
-            instructionCycle++;
+            write(rf->getHL(), result);
         }
-        else
-        {
-            M1();
-        }
+
+        M1();
         break;
     }
     case Opcode::RotateRight_Register:
@@ -2313,28 +1736,19 @@ void ControlUnit::executeCbInstruction()
     case Opcode::RotateRight_IndirectHL:
     {
         // three cycle
-        if (instructionCycle == 0)
+        Z = read(rf->getHL());
+
         {
-            bus->setAddress(rf->getHL());
-            Z = bus->readMemory();
-            instructionCycle++;
-        }
-        else if (instructionCycle == 1)
-        {
-            bus->setAddress(rf->getHL());
             bool carry = rf->getCflag();
             u8 result = alu->rotateRight(Z, carry);
             rf->setZflag(result == 0);
             rf->setNflag(false);
             rf->setHflag(false);
             rf->setCflag(carry);
-            bus->writeMemory(result);
-            instructionCycle++;
+            write(rf->getHL(), result);
         }
-        else
-        {
-            M1();
-        }
+
+        M1();
         break;
     }
     case Opcode::ShiftLeftArithmetic_Register:
@@ -2354,28 +1768,19 @@ void ControlUnit::executeCbInstruction()
     case Opcode::ShiftLeftArithmetic_IndirectHL:
     {
         // three cycle
-        if (instructionCycle == 0)
+        Z = read(rf->getHL());
+
         {
-            bus->setAddress(rf->getHL());
-            Z = bus->readMemory();
-            instructionCycle++;
-        }
-        else if (instructionCycle == 1)
-        {
-            bus->setAddress(rf->getHL());
             bool carry = rf->getCflag();
             u8 result = alu->shiftLeftA(Z, carry);
             rf->setZflag(result == 0);
             rf->setNflag(false);
             rf->setHflag(false);
             rf->setCflag(carry);
-            bus->writeMemory(result);
-            instructionCycle++;
+            write(rf->getHL(), result);
         }
-        else
-        {
-            M1();
-        }
+
+        M1();
         break;
     }
     case Opcode::ShiftRightArithmetic_Register:
@@ -2395,28 +1800,19 @@ void ControlUnit::executeCbInstruction()
     case Opcode::ShiftRightArithmetic_IndirectHL:
     {
         // three cycle
-        if (instructionCycle == 0)
+        Z = read(rf->getHL());
+
         {
-            bus->setAddress(rf->getHL());
-            Z = bus->readMemory();
-            instructionCycle++;
-        }
-        else if (instructionCycle == 1)
-        {
-            bus->setAddress(rf->getHL());
             bool carry = rf->getCflag();
             u8 result = alu->shiftRightA(Z, carry);
             rf->setZflag(result == 0);
             rf->setNflag(false);
             rf->setHflag(false);
             rf->setCflag(carry);
-            bus->writeMemory(result);
-            instructionCycle++;
+            write(rf->getHL(), result);
         }
-        else
-        {
-            M1();
-        }
+
+        M1();
         break;
     }
     case Opcode::SwapNibbles_Register:
@@ -2435,27 +1831,18 @@ void ControlUnit::executeCbInstruction()
     case Opcode::SwapNibbles_IndirectHL:
     {
         // three cycle
-        if (instructionCycle == 0)
+        Z = read(rf->getHL());
+
         {
-            bus->setAddress(rf->getHL());
-            Z = bus->readMemory();
-            instructionCycle++;
-        }
-        else if (instructionCycle == 1)
-        {
-            bus->setAddress(rf->getHL());
             u8 result = alu->swap(Z);
             rf->setZflag(result == 0);
             rf->setNflag(false);
             rf->setHflag(false);
             rf->setCflag(false);
-            bus->writeMemory(result);
-            instructionCycle++;
+            write(rf->getHL(), result);
         }
-        else
-        {
-            M1();
-        }
+
+        M1();
         break;
     }
     case Opcode::ShiftRightLogical_Register:
@@ -2475,28 +1862,19 @@ void ControlUnit::executeCbInstruction()
     case Opcode::ShiftRightLogical_IndirectHL:
     {
         // three cycle
-        if (instructionCycle == 0)
+        Z = read(rf->getHL());
+
         {
-            bus->setAddress(rf->getHL());
-            Z = bus->readMemory();
-            instructionCycle++;
-        }
-        else if (instructionCycle == 1)
-        {
-            bus->setAddress(rf->getHL());
             bool carry = rf->getCflag();
             u8 result = alu->shiftRightL(Z, carry);
             rf->setZflag(result == 0);
             rf->setNflag(false);
             rf->setHflag(false);
             rf->setCflag(carry);
-            bus->writeMemory(result);
-            instructionCycle++;
+            write(rf->getHL(), result);
         }
-        else
-        {
-            M1();
-        }
+
+        M1();
         break;
     }
     case Opcode::TestBit_Register:
@@ -2514,21 +1892,14 @@ void ControlUnit::executeCbInstruction()
     case Opcode::TestBit_IndirectHL:
     {
         // two cycle
-        if (instructionCycle == 0)
-        {
-            bus->setAddress(rf->getHL());
-            Z = bus->readMemory();
-            instructionCycle++;
-        }
-        else
-        {
-            M1();
-            u8 b = opcode >> 3 & 0b00000111;
-            u8 result = alu->bit(Z, b);
-            rf->setZflag(!result);
-            rf->setNflag(false);
-            rf->setHflag(true);
-        }
+        Z = read(rf->getHL());
+
+        M1();
+        u8 b = opcode >> 3 & 0b00000111;
+        u8 result = alu->bit(Z, b);
+        rf->setZflag(!result);
+        rf->setNflag(false);
+        rf->setHflag(true);
         break;
     }
     case Opcode::ResetBit_Register:
@@ -2543,23 +1914,14 @@ void ControlUnit::executeCbInstruction()
     case Opcode::ResetBit_IndirectHL:
     {
         // three cycle
-        if (instructionCycle == 0)
+        Z = read(rf->getHL());
+
         {
-            bus->setAddress(rf->getHL());
-            Z = bus->readMemory();
-            instructionCycle++;
-        }
-        else if (instructionCycle == 1)
-        {
-            bus->setAddress(rf->getHL());
             u8 b = opcode >> 3 & 0b00000111;
-            bus->writeMemory(alu->reset(Z, b));
-            instructionCycle++;
+            write(rf->getHL(), alu->reset(Z, b));
         }
-        else
-        {
-            M1();
-        }
+
+        M1();
         break;
     }
     case Opcode::SetBit_Register:
@@ -2574,23 +1936,14 @@ void ControlUnit::executeCbInstruction()
     case Opcode::SetBit_IndirectHL:
     {
         // three cycle
-        if (instructionCycle == 0)
+        Z = read(rf->getHL());
+
         {
-            bus->setAddress(rf->getHL());
-            Z = bus->readMemory();
-            instructionCycle++;
-        }
-        else if (instructionCycle == 1)
-        {
-            bus->setAddress(rf->getHL());
             u8 b = opcode >> 3 & 0b00000111;
-            bus->writeMemory(alu->set(Z, b));
-            instructionCycle++;
+            write(rf->getHL(), alu->set(Z, b));
         }
-        else
-        {
-            M1();
-        }
+
+        M1();
         break;
     }
 

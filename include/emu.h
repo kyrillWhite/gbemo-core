@@ -18,6 +18,7 @@ class DMA;
 class SystemClock;
 class Joypad;
 class APU;
+class Peripherals;
 
 class Emu
 {
@@ -36,6 +37,7 @@ private:
     SystemClock *clock;
     Joypad *joypad;
     APU *apu;
+    Peripherals *peripherals;
 
 public:
     Emu(bool skipBoot = false);
@@ -45,10 +47,12 @@ public:
     Emu &operator=(const Emu &) = delete;
 
     int loadRom(const char *romFilename);
-    bool tick();
+
+    u8 step();
 
     void pressButton(Button button);
     void releaseButton(Button button);
+    const char *getSerialLog();
     MonoColor *getVideoBuffer();
     i16 getLeftAudioSample();
     i16 getRightAudioSample();

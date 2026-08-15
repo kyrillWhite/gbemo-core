@@ -5,6 +5,7 @@
 #include "cpu/register_file.h"
 #include "cpu/idu.h"
 #include "cpu/alu.h"
+#include "system/peripherals.h"
 
 class ControlUnit
 {
@@ -14,10 +15,10 @@ private:
     IDU *idu;
     ALU *alu;
     Interrupts *interrupts;
+    Peripherals *peripherals;
 
-    u8 instructionCycle;
-    bool isCbInstruction;
-    bool cCheck;
+    u8 mCycles;
+
     bool halted;
     InterruptCommand interruptCommand;
 
@@ -28,6 +29,10 @@ private:
     bool IME;
 
     u16 currentPC;
+
+    u8 read(u16 address);
+    void write(u16 address, u8 value);
+    void idle();
 
     void incrementPC();
     void M1();
@@ -43,7 +48,7 @@ private:
     void handleInterrupt();
     void scrapInterrupts();
 
-    void printInstruction(Opcode opcode, bool fixCB = false);
+    void printInstruction(Opcode opcode);
 
 public:
     ControlUnit(
@@ -51,7 +56,8 @@ public:
         RegisterFile *_registerFile,
         IDU *_idu,
         ALU *_alu,
-        Interrupts *_interrupts);
+        Interrupts *_interrupts,
+        Peripherals *_peripherals);
 
-    void executeInstruction();
+    u8 step();
 };

@@ -6,6 +6,7 @@
 #include "debug/dbg_reader.h"
 #include "system/system_clock.h"
 #include "system/joypad.h"
+#include "system/peripherals.h"
 #include "audio/apu.h"
 
 Emu::Emu(bool skipBoot)
@@ -22,6 +23,7 @@ Emu::Emu(bool skipBoot)
     lcd = new LCD(dma, skipBoot);
     ppu = new PPU(lcd, skipBoot);
     ppuSm = new PpuStateMachine(lcd, ppu, interrupts);
+    peripherals = new Peripherals(timer, ppu, apu, dma);
 
     memory = new Memory(
         bus->getAddressBus(),
@@ -35,7 +37,7 @@ Emu::Emu(bool skipBoot)
         apu,
         skipBoot);
 
-    core = new Core(bus, interrupts, skipBoot);
+    core = new Core(bus, interrupts, peripherals, skipBoot);
     dbgReader = new DbgReader(memory);
 
     dma->setPPU(ppu);
@@ -49,6 +51,7 @@ Emu::~Emu()
     delete dbgReader;
     delete core;
     delete memory;
+    delete peripherals;
     delete ppuSm;
     delete ppu;
     delete lcd;
@@ -67,9 +70,8 @@ int Emu::loadRom(const char *romFilename)
     return cartridge->readRomFile(romFilename);
 }
 
-bool Emu::tick()
+u8 Emu::step()
 {
-    // if (clock->isAllowTick()) {
 #ifdef DELAY_PRINT
     if (globalTicks % PRINT_SKIP == 0)
     {
@@ -77,26 +79,12 @@ bool Emu::tick()
     }
 #endif // DELAY_PRINT
 
-    // timer tick must be before core tick
-    timer->tick();
+    u8 mCycles = core->step();
 
-    if (globalTicks % 4 == 0)
-    {
-        core->tick();
-        dma->tick();
+    dbgReader->update();
+    dbgReader->print();
 
-        dbgReader->update();
-        dbgReader->print();
-    }
-
-    ppu->tick();
-    apu->tick();
-
-    globalTicks++;
-
-    return true;
-    //}
-    // return false;
+    return mCycles;
 }
 
 const char *Emu::getSerialLog()
