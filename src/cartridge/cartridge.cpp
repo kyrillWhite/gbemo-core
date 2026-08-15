@@ -69,7 +69,7 @@ int Cartridge::readRomFile(const char *filename)
     }
     rewind(filp);
 
-    romData.assign(romSize, 0);
+    std::fill_n(romData.begin(), romSize, 0);
     fread(romData.data(), sizeof(u8), romSize, filp);
     fclose(filp);
 
