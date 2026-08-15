@@ -13,7 +13,7 @@
     [+-] miscellaneous instructions
 */
 
-enum Opcode
+enum Opcode : u8
 {
     // 8-bit load instructions
     LoadRegister_Register,

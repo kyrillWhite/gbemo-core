@@ -35,8 +35,6 @@ private:
     u16 getWZ();
     void setWZ(u16 value);
 
-    Opcode decodeStdOpcode(u8 opcode);
-    Opcode decodeCbOpcode(u8 opcode);
     void executeStdInstruction();
     void executeCbInstruction();
 

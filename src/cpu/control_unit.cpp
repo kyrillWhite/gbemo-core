@@ -1,4 +1,5 @@
 #include "cpu/control_unit.h"
+#include <array>
 #include <cstdint>
 
 void ControlUnit::incrementPC()
@@ -114,7 +115,7 @@ ControlUnit::ControlUnit(
 {
 }
 
-Opcode ControlUnit::decodeStdOpcode(u8 opcode)
+static constexpr Opcode computeStdOpcode(u8 opcode)
 {
     switch (opcode)
     {
@@ -341,7 +342,7 @@ Opcode ControlUnit::decodeStdOpcode(u8 opcode)
     }
 }
 
-Opcode ControlUnit::decodeCbOpcode(u8 opcode)
+static constexpr Opcode computeCbOpcode(u8 opcode)
 {
     switch (opcode)
     {
@@ -426,6 +427,36 @@ Opcode ControlUnit::decodeCbOpcode(u8 opcode)
     }
 }
 
+static constexpr std::array<Opcode, 256> makeStdOpcodeTable()
+{
+    std::array<Opcode, 256> table{};
+    for (u32 opcode = 0; opcode < 256; opcode++)
+    {
+        table[opcode] = computeStdOpcode(static_cast<u8>(opcode));
+    }
+    return table;
+}
+
+static constexpr std::array<Opcode, 256> makeCbOpcodeTable()
+{
+    std::array<Opcode, 256> table{};
+    for (u32 opcode = 0; opcode < 256; opcode++)
+    {
+        table[opcode] = computeCbOpcode(static_cast<u8>(opcode));
+    }
+    return table;
+}
+
+static constexpr std::array<Opcode, 256> STD_OPCODES = makeStdOpcodeTable();
+static constexpr std::array<Opcode, 256> CB_OPCODES = makeCbOpcodeTable();
+static_assert(sizeof(STD_OPCODES) == 256, "Opcode is expected to be one byte wide");
+static_assert(sizeof(CB_OPCODES) == 256, "Opcode is expected to be one byte wide");
+
+// $CB is the prefix itself in the unprefixed map and a SET in the prefixed one,
+// so this catches the two tables being wired to the wrong builder.
+static_assert(STD_OPCODES[0xCB] == Opcode::CB);
+static_assert(CB_OPCODES[0xCB] == Opcode::SetBit_Register);
+
 void ControlUnit::executeInstruction()
 {
 #ifdef DEBUG
@@ -483,7 +514,7 @@ void ControlUnit::executeStdInstruction()
 {
     auto rf = registerFile;
     auto opcode = rf->getIR();
-    auto opcodeType = decodeStdOpcode(opcode);
+    auto opcodeType = STD_OPCODES[opcode];
 
 #ifdef DEBUG
     if (globalTicks > DEBUG_START && opcodeType != Opcode::CB)
@@ -2162,7 +2193,7 @@ void ControlUnit::executeCbInstruction()
 {
     auto rf = registerFile;
     auto opcode = rf->getIR();
-    auto opcodeType = decodeCbOpcode(opcode);
+    auto opcodeType = CB_OPCODES[opcode];
 
 #ifdef DEBUG
     if (globalTicks > DEBUG_START)
